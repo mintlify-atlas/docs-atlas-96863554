@@ -1,0 +1,110 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Handler",
+  "projectDescription": "A2A Protocol client and developer toolkit with CLI, TUI, and MCP server",
+  "theme": "aspen",
+  "primaryColor": "#2563eb",
+  "lightColor": "#60a5fa",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Get Started",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["introduction", "installation"]
+          },
+          {
+            "group": "Quick Start",
+            "pages": ["quickstart"]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Core Commands",
+            "pages": [
+              "cli/message",
+              "cli/task",
+              "cli/card"
+            ]
+          },
+          {
+            "group": "Server & Tools",
+            "pages": [
+              "cli/server",
+              "cli/mcp",
+              "cli/session",
+              "cli/auth"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "User Guide",
+            "pages": [
+              "guides/tui",
+              "guides/authentication",
+              "guides/sessions",
+              "guides/agent-cards"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "guides/push-notifications",
+              "guides/mcp-integration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Developer Guide",
+            "pages": [
+              "development/architecture",
+              "development/contributing"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Interactive TUI for agent communication",
+    "Comprehensive CLI for A2A protocol operations",
+    "MCP server for AI assistant integration",
+    "Agent card validation and discovery",
+    "Session management and persistence",
+    "Local A2A server agent with LiteLLM support",
+    "Streaming and push notification support"
+  ],
+  "publicApiSurface": [
+    "handler tui - Launch interactive terminal interface",
+    "handler message send - Send messages to A2A agents",
+    "handler message stream - Stream messages from agents",
+    "handler task get - Get task status",
+    "handler task cancel - Cancel running tasks",
+    "handler task resubscribe - Resubscribe to task events",
+    "handler task notification set - Configure push notifications",
+    "handler card get - Fetch agent cards",
+    "handler card validate - Validate agent cards",
+    "handler server agent - Run local A2A agent",
+    "handler server push - Run push notification webhook server",
+    "handler mcp - Run MCP server",
+    "handler session list - List saved sessions",
+    "handler session show - Show session details",
+    "handler session clear - Clear sessions",
+    "handler auth bearer - Set bearer token authentication",
+    "handler auth api-key - Set API key authentication",
+    "handler auth clear - Clear authentication"
+  ]
+}
