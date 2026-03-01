@@ -1,0 +1,235 @@
+---
+title: Installation
+description: Install Handler using your preferred Python package manager
+---
+
+Handler is published to PyPI as `a2a-handler` and can be installed using multiple package managers. Choose the installation method that best fits your workflow.
+
+## Prerequisites
+
+- **Python 3.11 or higher** - Handler requires Python 3.11+
+- A package manager: [uv](https://github.com/astral-sh/uv), [pipx](https://pipx.pypa.io/), or pip
+
+<Note>
+Handler is designed to be installed as a standalone tool using `uv tool` or `pipx`. This isolates Handler's dependencies from your other Python projects.
+</Note>
+
+## Installation methods
+
+<Tabs>
+  <Tab title="uv (recommended)">
+    [uv](https://github.com/astral-sh/uv) is an extremely fast Python package installer and resolver written in Rust.
+
+    ### Install uv
+
+    If you don't have uv installed:
+
+    ```bash
+    # macOS and Linux
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    # Windows
+    powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+    ```
+
+    ### Install Handler
+
+    ```bash
+    uv tool install a2a-handler
+    ```
+
+    The `handler` command will be available in your PATH.
+
+    ### Run without installing
+
+    You can also run Handler from an ephemeral environment without installing:
+
+    ```bash
+    uvx --from a2a-handler handler
+    ```
+
+    This is useful for one-off usage or testing.
+  </Tab>
+
+  <Tab title="pipx">
+    [pipx](https://pipx.pypa.io/) installs Python CLI applications in isolated environments.
+
+    ### Install pipx
+
+    If you don't have pipx installed:
+
+    ```bash
+    # macOS
+    brew install pipx
+    pipx ensurepath
+
+    # Linux
+    python3 -m pip install --user pipx
+    python3 -m pipx ensurepath
+
+    # Windows
+    python -m pip install --user pipx
+    python -m pipx ensurepath
+    ```
+
+    ### Install Handler
+
+    ```bash
+    pipx install a2a-handler
+    ```
+
+    ### Run without installing
+
+    ```bash
+    pipx run a2a-handler
+    ```
+  </Tab>
+
+  <Tab title="pip">
+    Standard pip installation (not recommended for CLI tools, as it doesn't isolate dependencies).
+
+    ### Install Handler
+
+    ```bash
+    pip install a2a-handler
+    ```
+
+    <Warning>
+    Using pip directly may conflict with your system Python packages. Consider using `uv tool` or `pipx` instead for better dependency isolation.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Verify installation
+
+Confirm Handler is installed correctly:
+
+```bash
+# Check version
+handler version
+
+# View help
+handler --help
+```
+
+You should see the Handler CLI help output with all available commands:
+
+```
+Usage: handler [OPTIONS] COMMAND [ARGS]...
+
+  Handler - A2A protocol client CLI.
+
+Options:
+  -v, --verbose  Enable verbose logging
+  -d, --debug    Enable debug logging
+  --help         Show this message and exit.
+
+Commands:
+  auth     Manage authentication credentials for agents
+  card     Agent card operations (get, validate)
+  mcp      Run a local MCP server exposing A2A capabilities
+  message  Send messages to A2A agents
+  server   Run local servers (agent, push webhook)
+  session  Manage saved sessions
+  task     Task operations (get, cancel, notifications)
+  tui      Launch the interactive terminal interface
+  version  Display the current version
+  web      Serve the TUI as a web application
+```
+
+## Update Handler
+
+Keep Handler up to date with the latest features and bug fixes:
+
+<CodeGroup>
+```bash uv
+uv tool upgrade a2a-handler
+```
+
+```bash pipx
+pipx upgrade a2a-handler
+```
+
+```bash pip
+pip install --upgrade a2a-handler
+```
+</CodeGroup>
+
+## Development installation
+
+For contributing to Handler or running from source:
+
+```bash
+# Clone the repository
+git clone https://github.com/alDuncanson/handler.git
+cd handler
+
+# Install with uv (includes dev dependencies)
+uv sync
+
+# Run from source
+uv run handler --help
+```
+
+### Nix development environment
+
+A [hermetically sealed](https://zero-to-nix.com/concepts/hermeticity/) development environment is available with [Nix](https://zero-to-nix.com/):
+
+```bash
+nix develop
+```
+
+This provides Python, uv, and just with all commands ready to use.
+
+## Troubleshooting
+
+### Command not found
+
+If `handler` is not found after installation:
+
+1. **Check your PATH**: Ensure the installation directory is in your PATH
+   - uv: `~/.local/bin` (Unix) or `%USERPROFILE%\.local\bin` (Windows)
+   - pipx: Run `pipx ensurepath` to add to PATH
+
+2. **Restart your shell**: Close and reopen your terminal
+
+3. **Verify installation**:
+   ```bash
+   # For uv
+   uv tool list
+
+   # For pipx
+   pipx list
+   ```
+
+### SSL certificate errors
+
+Handler uses `truststore` to inject system certificates. If you encounter SSL errors:
+
+```bash
+# macOS - update certificates
+/Applications/Python\ 3.11/Install\ Certificates.command
+
+# Linux - install ca-certificates
+sudo apt-get install ca-certificates  # Debian/Ubuntu
+sudo yum install ca-certificates      # RHEL/CentOS
+```
+
+### Permission errors
+
+On Unix systems, you may need to make the binary executable:
+
+```bash
+chmod +x ~/.local/bin/handler
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Send your first message to an A2A agent
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli/message">
+    Explore all CLI commands in detail
+  </Card>
+</CardGroup>

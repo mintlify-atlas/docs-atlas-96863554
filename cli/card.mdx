@@ -1,0 +1,167 @@
+---
+title: 'Card Commands'
+description: 'Retrieve and validate agent cards'
+---
+
+The `card` command group provides functionality to retrieve agent cards and validate their structure and contents.
+
+## get
+
+Retrieve an agent's card, which contains metadata about the agent's capabilities, description, and configuration.
+
+```bash
+handler card get <agent_url> [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent whose card to retrieve
+</ParamField>
+
+### Options
+
+<ParamField path="--authenticated" type="flag">
+  Request authenticated extended card. Some agents may return additional information when authenticated. Short form: `-a`
+  
+  <Note>Currently defined in the code but not fully implemented in the service layer.</Note>
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Get agent card
+handler card get http://localhost:8000
+```
+
+```bash Get authenticated card
+handler card get http://localhost:8000 --authenticated
+```
+</CodeGroup>
+
+### Response Format
+
+The agent card is returned as JSON and includes:
+
+- **name**: Agent name
+- **protocol_version**: A2A protocol version
+- **description**: Human-readable description of the agent
+- **url**: Agent's endpoint URL
+- **capabilities**: List of agent capabilities (e.g., streaming, push notifications)
+- **models**: Available models (if applicable)
+- **authentication**: Supported authentication methods
+- **rate_limits**: Rate limiting information (if applicable)
+
+<CodeGroup>
+```json Example agent card
+{
+  "name": "Example Agent",
+  "protocol_version": "2024-11-05",
+  "description": "A helpful AI agent",
+  "url": "http://localhost:8000",
+  "capabilities": [
+    "streaming",
+    "push_notifications"
+  ],
+  "authentication": {
+    "schemes": ["bearer", "api_key"]
+  }
+}
+```
+</CodeGroup>
+
+<Tip>
+Agent cards are useful for discovering an agent's capabilities before interacting with it. You can inspect the card to see what authentication methods are supported, whether streaming is available, and more.
+</Tip>
+
+---
+
+## validate
+
+Validate an agent card from a URL or local file. Checks that the card conforms to the A2A protocol specification.
+
+```bash
+handler card validate <source>
+```
+
+### Arguments
+
+<ParamField path="source" type="string" required>
+  URL or file path of the agent card to validate. 
+  
+  - If the source starts with `http://` or `https://`, it's treated as a URL
+  - Otherwise, it's treated as a local file path
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Validate from URL
+handler card validate http://localhost:8000
+```
+
+```bash Validate from file
+handler card validate ./agent-card.json
+```
+
+```bash Validate remote agent
+handler card validate https://api.example.com/agent
+```
+</CodeGroup>
+
+### Response Format
+
+#### Valid Card
+
+When validation succeeds, the output includes:
+
+- **Status**: "Valid Agent Card"
+- **Agent**: Agent name from the card
+- **Protocol Version**: A2A protocol version
+- **Source**: URL or file path validated
+
+<CodeGroup>
+```bash Example output (valid)
+Valid Agent Card
+Agent: Example Agent
+Protocol Version: 2024-11-05
+Source: http://localhost:8000
+```
+</CodeGroup>
+
+#### Invalid Card
+
+When validation fails, the output includes:
+
+- **Status**: "Invalid Agent Card"
+- **Source**: URL or file path validated
+- **Errors**: List of validation issues with field names and messages
+
+<CodeGroup>
+```bash Example output (invalid)
+Invalid Agent Card
+Source: ./bad-card.json
+
+Errors (2):
+✗ name: Field required
+✗ protocol_version: Invalid protocol version format
+```
+</CodeGroup>
+
+The command exits with status code 1 if validation fails.
+
+<Warning>
+Validation checks both the structure (required fields, types) and content (valid protocol versions, URLs, etc.) of the agent card.
+</Warning>
+
+### Common Validation Issues
+
+- **Missing required fields**: `name`, `protocol_version`, `url`
+- **Invalid protocol version**: Must match supported A2A versions
+- **Invalid URL format**: Must be a valid HTTP/HTTPS URL
+- **Invalid capability values**: Must be from the defined set of capabilities
+- **Malformed JSON**: File must contain valid JSON
+
+<Tip>
+Use validation during development to ensure your agent card is correctly formatted before deploying your agent.
+</Tip>

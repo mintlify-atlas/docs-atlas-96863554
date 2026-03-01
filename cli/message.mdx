@@ -1,0 +1,168 @@
+---
+title: 'Message Commands'
+description: 'Send messages to A2A agents and receive responses'
+---
+
+The `message` command group provides functionality to send messages to A2A agents and receive responses, with support for streaming, sessions, and authentication.
+
+## send
+
+Send a message to an agent and receive a response.
+
+```bash
+handler message send <agent_url> <text> [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent to send the message to
+</ParamField>
+
+<ParamField path="text" type="string" required>
+  Message text to send to the agent
+</ParamField>
+
+### Options
+
+<ParamField path="--stream" type="flag">
+  Stream responses in real-time. Short form: `-s`
+</ParamField>
+
+<ParamField path="--context-id" type="string">
+  Context ID for conversation continuity. Use this to continue a previous conversation thread.
+</ParamField>
+
+<ParamField path="--task-id" type="string">
+  Task ID to continue. Allows you to resume or continue an existing task.
+</ParamField>
+
+<ParamField path="--continue" type="flag">
+  Continue from saved session. Uses the context ID and task ID from the last interaction with this agent. Short form: `-C`
+</ParamField>
+
+<ParamField path="--push-url" type="string">
+  Webhook URL for push notifications. The agent will send updates to this URL.
+</ParamField>
+
+<ParamField path="--push-token" type="string">
+  Authentication token for push notifications. Sent with webhook requests.
+</ParamField>
+
+<ParamField path="--bearer" type="string">
+  Bearer token for authentication. Overrides saved credentials. Short form: `-b`
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  API key for authentication. Overrides saved credentials. Short form: `-k`
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Basic message
+handler message send http://localhost:8000 "What is the weather?"
+```
+
+```bash Stream response
+handler message send http://localhost:8000 "Explain quantum computing" --stream
+```
+
+```bash Continue conversation
+handler message send http://localhost:8000 "Tell me more" --continue
+```
+
+```bash With context ID
+handler message send http://localhost:8000 "Follow up question" --context-id ctx_abc123
+```
+
+```bash With authentication
+handler message send http://localhost:8000 "Secure request" --bearer eyJhbG...
+```
+
+```bash With push notifications
+handler message send http://localhost:8000 "Long task" \
+  --push-url http://localhost:9000/webhook \
+  --push-token secret123
+```
+</CodeGroup>
+
+### Response Format
+
+Successful responses include:
+
+- **Context ID**: Unique identifier for the conversation context
+- **Task ID**: Unique identifier for the task
+- **State**: Current state of the task (e.g., `completed`, `working`, `auth-required`)
+- **Text**: The agent's response message
+
+<Note>
+Use `--continue` to automatically resume your last conversation with an agent without manually specifying context and task IDs.
+</Note>
+
+<Warning>
+If you receive an `auth-required` state, you need to set credentials using `handler auth set` or provide them inline with `--bearer` or `--api-key`.
+</Warning>
+
+---
+
+## stream
+
+Send a message and stream the response in real-time. This is a convenience alias for `message send --stream`.
+
+```bash
+handler message stream <agent_url> <text> [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent to send the message to
+</ParamField>
+
+<ParamField path="text" type="string" required>
+  Message text to send to the agent
+</ParamField>
+
+### Options
+
+Same as `message send` (except `--stream` is automatically enabled):
+
+- `--context-id` - Context ID for conversation continuity
+- `--task-id` - Task ID to continue
+- `--continue` / `-C` - Continue from saved session
+- `--push-url` - Webhook URL for push notifications
+- `--push-token` - Authentication token for push notifications
+- `--bearer` / `-b` - Bearer token (overrides saved)
+- `--api-key` / `-k` - API key (overrides saved)
+
+### Examples
+
+<CodeGroup>
+```bash Stream response
+handler message stream http://localhost:8000 "Write a poem about technology"
+```
+
+```bash Continue streaming conversation
+handler message stream http://localhost:8000 "Make it longer" --continue
+```
+</CodeGroup>
+
+<Tip>
+Streaming is useful for long-running responses where you want to see output as it's generated rather than waiting for the entire response.
+</Tip>
+
+### Session Management
+
+Handler automatically saves session state (context ID and task ID) after each message. Use the `--continue` flag to resume conversations:
+
+```bash
+# First message
+handler message send http://localhost:8000 "Hello"
+# Session saved automatically
+
+# Continue conversation
+handler message send http://localhost:8000 "What did I just say?" --continue
+```
+
+See [session commands](/cli/session) for managing saved sessions.

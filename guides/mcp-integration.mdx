@@ -1,0 +1,716 @@
+---
+title: MCP Integration
+description: Use Handler's MCP server to bridge AI assistants into the A2A ecosystem
+---
+
+## Overview
+
+Handler provides an MCP (Model Context Protocol) server that exposes A2A protocol capabilities as tools for AI assistants. This enables assistants like Claude Desktop, Cursor, and other MCP clients to interact with A2A agents.
+
+The MCP server acts as a bridge: your AI assistant calls MCP tools, and Handler translates those into A2A protocol operations.
+
+## Architecture
+
+```
+AI Assistant (Claude, Cursor, etc.)
+    |
+    | MCP Protocol
+    v
+Handler MCP Server
+    |
+    | A2A Protocol (JSONRPC)
+    v
+A2A Agent
+```
+
+## Starting the MCP Server
+
+<Tabs>
+  <Tab title="Default (stdio)">
+    Start the MCP server with stdio transport (for CLI integration):
+    
+    ```bash
+    handler mcp
+    ```
+    
+    This starts the server and waits for MCP client connections via standard input/output.
+  </Tab>
+  
+  <Tab title="SSE Transport">
+    Use Server-Sent Events transport for HTTP clients:
+    
+    ```bash
+    handler mcp --transport sse
+    ```
+  </Tab>
+  
+  <Tab title="Python">
+    Run programmatically:
+    
+    ```python
+    from a2a_handler.mcp import run_mcp_server
+    
+    run_mcp_server(transport="stdio")
+    ```
+  </Tab>
+</Tabs>
+
+Implementation in `mcp/server.py:529-541`:
+
+```python
+def run_mcp_server(
+    transport: Literal["stdio", "sse", "streamable-http"] = "stdio",
+) -> None:
+    """Run the MCP server with the specified transport.
+    
+    Args:
+        transport: The transport protocol to use
+    """
+    mcp = create_mcp_server()
+    logger.info("Starting MCP server with %s transport", transport)
+    mcp.run(transport=transport)
+```
+
+## Configuring Claude Desktop
+
+Add Handler to your Claude Desktop configuration:
+
+<Steps>
+  <Step title="Locate config file">
+    Open Claude Desktop's configuration file:
+    
+    **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+    
+    **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+    
+    **Linux**: `~/.config/Claude/claude_desktop_config.json`
+  </Step>
+  
+  <Step title="Add Handler MCP server">
+    ```json claude_desktop_config.json
+    {
+      "mcpServers": {
+        "handler": {
+          "command": "handler",
+          "args": ["mcp"]
+        }
+      }
+    }
+    ```
+    
+    Or with full path:
+    ```json
+    {
+      "mcpServers": {
+        "handler": {
+          "command": "/usr/local/bin/handler",
+          "args": ["mcp"]
+        }
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Restart Claude Desktop">
+    Quit and relaunch Claude Desktop to load the MCP server.
+  </Step>
+  
+  <Step title="Verify connection">
+    In Claude, ask:
+    
+    "What MCP tools do you have available?"
+    
+    Claude should list Handler's A2A tools.
+  </Step>
+</Steps>
+
+## Available MCP Tools
+
+Handler exposes the following tools:
+
+### Card Tools
+
+<AccordionGroup>
+  <Accordion title="validate_agent_card">
+    Validate an A2A agent card from a URL or local file.
+    
+    **Parameters**:
+    - `source` (string): URL or file path to agent card
+    - `from_file` (boolean): Treat source as file path if true
+    
+    **Returns**:
+    ```json
+    {
+      "valid": true,
+      "source": "http://localhost:8000",
+      "agent_name": "Example Agent",
+      "protocol_version": "0.3.0",
+      "capabilities": {
+        "streaming": true,
+        "push_notifications": false
+      }
+    }
+    ```
+    
+    Implementation in `mcp/server.py:63-128`.
+  </Accordion>
+  
+  <Accordion title="get_agent_card">
+    Retrieve an agent's full card with all details.
+    
+    **Parameters**:
+    - `agent_url` (string): Base URL of the A2A agent
+    
+    **Returns**: Complete agent card as JSON
+    
+    ```python mcp/server.py:130-150
+    @mcp.tool()
+    async def get_agent_card(agent_url: str) -> dict:
+        """Retrieve an agent's card with full details."""
+        async with _build_http_client() as http_client:
+            service = A2AService(http_client, agent_url)
+            card = await service.get_card()
+            return card.model_dump(exclude_none=True)
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Message Tools
+
+<AccordionGroup>
+  <Accordion title="send_message">
+    Send a message to an A2A agent and receive a response.
+    
+    **Parameters**:
+    - `agent_url` (string, required): Agent base URL
+    - `message` (string, required): Text message to send
+    - `context_id` (string, optional): Context ID for continuity
+    - `task_id` (string, optional): Task ID to continue
+    - `use_session` (boolean): Use saved session context
+    - `bearer_token` (string, optional): Bearer token for auth
+    - `api_key` (string, optional): API key for auth
+    
+    **Returns**:
+    ```json
+    {
+      "context_id": "ctx-abc123",
+      "task_id": "task-xyz789",
+      "state": "completed",
+      "text": "Agent's response text",
+      "needs_input": false,
+      "needs_auth": false
+    }
+    ```
+    
+    Example usage from Claude:
+    ```
+    User: "Send a message to my local agent asking about the weather"
+    
+    Claude: [Calls send_message tool]
+    {
+      "agent_url": "http://localhost:8000",
+      "message": "What's the weather like today?",
+      "use_session": true
+    }
+    ```
+    
+    Implementation in `mcp/server.py:152-213`.
+  </Accordion>
+</AccordionGroup>
+
+### Task Tools
+
+<AccordionGroup>
+  <Accordion title="get_task">
+    Get the current status and details of a task.
+    
+    **Parameters**:
+    - `agent_url` (string): Agent base URL
+    - `task_id` (string): Task ID to retrieve
+    - `history_length` (integer, optional): Number of history messages
+    - `bearer_token` (string, optional): Bearer token
+    - `api_key` (string, optional): API key
+    
+    **Returns**:
+    ```json
+    {
+      "task_id": "task-xyz789",
+      "context_id": "ctx-abc123",
+      "state": "working",
+      "text": "Processing your request..."
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="cancel_task">
+    Cancel a running task.
+    
+    **Parameters**:
+    - `agent_url` (string): Agent base URL
+    - `task_id` (string): Task ID to cancel
+    - `bearer_token` (string, optional): Bearer token
+    - `api_key` (string, optional): API key
+    
+    **Returns**: Task state after cancellation
+  </Accordion>
+  
+  <Accordion title="set_task_notification">
+    Configure push notifications for a task.
+    
+    **Parameters**:
+    - `agent_url` (string): Agent base URL
+    - `task_id` (string): Task ID
+    - `webhook_url` (string): Webhook URL to receive notifications
+    - `webhook_token` (string, optional): Webhook auth token
+    - `bearer_token` (string, optional): Bearer token
+    - `api_key` (string, optional): API key
+    
+    See [Push Notifications Guide](/guides/push-notifications) for details.
+  </Accordion>
+  
+  <Accordion title="get_task_notification">
+    Get push notification configuration for a task.
+    
+    **Parameters**:
+    - `agent_url` (string): Agent base URL
+    - `task_id` (string): Task ID
+    - `config_id` (string, optional): Specific config ID
+    - `bearer_token` (string, optional): Bearer token
+    - `api_key` (string, optional): API key
+  </Accordion>
+</AccordionGroup>
+
+### Session Tools
+
+<AccordionGroup>
+  <Accordion title="list_sessions">
+    List all saved sessions.
+    
+    **Returns**:
+    ```json
+    {
+      "count": 2,
+      "sessions": [
+        {
+          "agent_url": "http://localhost:8000",
+          "context_id": "ctx-abc123",
+          "task_id": "task-xyz789",
+          "has_credentials": true
+        }
+      ]
+    }
+    ```
+    
+    Implementation in `mcp/server.py:389-419`:
+    ```python
+    @mcp.tool()
+    async def list_sessions() -> dict:
+        """List all saved sessions.
+        
+        Sessions store context_id, task_id, and credentials for agents.
+        """
+        store = get_session_store()
+        sessions = store.list_all()
+        
+        return {
+            "count": len(sessions),
+            "sessions": [
+                {
+                    "agent_url": s.agent_url,
+                    "context_id": s.context_id,
+                    "task_id": s.task_id,
+                    "has_credentials": s.credentials is not None,
+                }
+                for s in sessions
+            ],
+        }
+    ```
+  </Accordion>
+  
+  <Accordion title="get_session_info">
+    Get session information for a specific agent.
+    
+    **Parameters**:
+    - `agent_url` (string): Agent base URL
+    
+    **Returns**: Session details (context_id, task_id, has_credentials)
+  </Accordion>
+  
+  <Accordion title="clear_session_data">
+    Clear saved session data.
+    
+    **Parameters**:
+    - `agent_url` (string, optional): Agent URL to clear, or null for all
+    
+    **Note**: Does not clear credentials - use `clear_agent_credentials` for that.
+  </Accordion>
+</AccordionGroup>
+
+### Auth Tools
+
+<AccordionGroup>
+  <Accordion title="set_agent_credentials">
+    Set authentication credentials for an agent.
+    
+    **Parameters**:
+    - `agent_url` (string): Agent base URL
+    - `bearer_token` (string, optional): Bearer token
+    - `api_key` (string, optional): API key
+    
+    **Returns**:
+    ```json
+    {
+      "agent_url": "http://localhost:8000",
+      "auth_type": "bearer"
+    }
+    ```
+    
+    Credentials are saved to `~/.handler/sessions.json`.
+    
+    Implementation in `mcp/server.py:472-504`:
+    ```python
+    @mcp.tool()
+    async def set_agent_credentials(
+        agent_url: str,
+        bearer_token: str | None = None,
+        api_key: str | None = None,
+    ) -> dict:
+        """Set authentication credentials for an agent.
+        
+        Saves credentials for all future requests to this agent.
+        """
+        if bearer_token:
+            credentials = create_bearer_auth(bearer_token)
+            set_credentials(agent_url, credentials)
+            return {"agent_url": agent_url, "auth_type": "bearer"}
+        elif api_key:
+            credentials = create_api_key_auth(api_key)
+            set_credentials(agent_url, credentials)
+            return {"agent_url": agent_url, "auth_type": "api_key"}
+        else:
+            return {"error": "Either bearer_token or api_key must be provided"}
+    ```
+  </Accordion>
+  
+  <Accordion title="clear_agent_credentials">
+    Clear saved credentials for an agent.
+    
+    **Parameters**:
+    - `agent_url` (string): Agent base URL
+    
+    **Returns**:
+    ```json
+    {
+      "agent_url": "http://localhost:8000",
+      "cleared": true
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Session Management
+
+The MCP server automatically manages sessions:
+
+```python mcp/server.py:188-204
+# Session is loaded if use_session=true
+if use_session and not context_id:
+    session = get_session(agent_url)
+    if session.context_id:
+        context_id = session.context_id
+        logger.info("Using saved context: %s", context_id)
+
+# Credentials are resolved from session or explicit args
+credentials = _resolve_credentials(agent_url, bearer_token, api_key)
+
+async with _build_http_client() as http_client:
+    service = A2AService(http_client, agent_url, credentials=credentials)
+    result = await service.send(message, context_id, task_id)
+    
+    # Session is automatically updated
+    update_session(agent_url, result.context_id, result.task_id)
+```
+
+## Example Workflows
+
+<Tabs>
+  <Tab title="Basic Interaction">
+    Using Claude Desktop with Handler MCP:
+    
+    **User**: "Connect to my local agent at http://localhost:8000 and ask what it can do"
+    
+    **Claude**: [Calls `send_message` tool]
+    ```json
+    {
+      "agent_url": "http://localhost:8000",
+      "message": "What capabilities do you have?",
+      "use_session": true
+    }
+    ```
+    
+    **Result**:
+    ```json
+    {
+      "context_id": "ctx-abc123",
+      "task_id": "task-xyz789",
+      "state": "completed",
+      "text": "I can help with weather, calculations, and data analysis."
+    }
+    ```
+    
+    **User**: "Now ask it about the weather in Seattle"
+    
+    **Claude**: [Calls `send_message` with saved context]
+    ```json
+    {
+      "agent_url": "http://localhost:8000",
+      "message": "What's the weather in Seattle?",
+      "use_session": true
+    }
+    ```
+  </Tab>
+  
+  <Tab title="With Authentication">
+    **User**: "Set up authentication for my agent with bearer token ABC123"
+    
+    **Claude**: [Calls `set_agent_credentials`]
+    ```json
+    {
+      "agent_url": "http://localhost:8000",
+      "bearer_token": "ABC123"
+    }
+    ```
+    
+    **User**: "Now send it a message"
+    
+    **Claude**: [Calls `send_message`, credentials auto-loaded]
+    ```json
+    {
+      "agent_url": "http://localhost:8000",
+      "message": "Hello!",
+      "use_session": true
+    }
+    ```
+    
+    The MCP server automatically applies saved credentials.
+  </Tab>
+  
+  <Tab title="Validating Cards">
+    **User**: "Check if the agent at http://localhost:8000 has a valid card"
+    
+    **Claude**: [Calls `validate_agent_card`]
+    ```json
+    {
+      "source": "http://localhost:8000",
+      "from_file": false
+    }
+    ```
+    
+    **Result**:
+    ```json
+    {
+      "valid": true,
+      "agent_name": "Example Agent",
+      "protocol_version": "0.3.0",
+      "capabilities": {
+        "streaming": true,
+        "push_notifications": false
+      },
+      "skills": [
+        {"id": "weather", "name": "Weather Information"}
+      ]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## MCP Server Configuration
+
+The MCP server is created with metadata:
+
+```python mcp/server.py:51-61
+def create_mcp_server() -> FastMCP:
+    """Create and configure the MCP server with A2A tools."""
+    mcp = FastMCP(
+        name="Handler",
+        instructions=(
+            "Handler exposes A2A (Agent-to-Agent) protocol capabilities. "
+            "Use these tools to interact with A2A agents, validate agent cards, "
+            "and discover agent capabilities."
+        ),
+        website_url="https://github.com/alDuncanson/handler",
+    )
+```
+
+## Configuring Other MCP Clients
+
+<Tabs>
+  <Tab title="Cursor">
+    Add to Cursor's MCP settings:
+    
+    ```json
+    {
+      "mcpServers": {
+        "handler": {
+          "command": "handler",
+          "args": ["mcp"]
+        }
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Custom Client">
+    Connect to Handler's MCP server from your own client:
+    
+    ```python
+    import subprocess
+    from mcp import ClientSession, StdioServerParameters
+    
+    server_params = StdioServerParameters(
+        command="handler",
+        args=["mcp"],
+    )
+    
+    async with ClientSession(server_params) as session:
+        # List available tools
+        tools = await session.list_tools()
+        
+        # Call a tool
+        result = await session.call_tool(
+            "send_message",
+            {
+                "agent_url": "http://localhost:8000",
+                "message": "Hello!",
+            },
+        )
+    ```
+  </Tab>
+</Tabs>
+
+## Credential Resolution
+
+The MCP server resolves credentials in this priority order:
+
+1. Explicit `bearer_token` or `api_key` parameters
+2. Saved credentials from sessions
+3. No credentials (if neither provided)
+
+```python mcp/server.py:38-48
+def _resolve_credentials(
+    agent_url: str,
+    bearer_token: str | None = None,
+    api_key: str | None = None,
+) -> AuthCredentials | None:
+    """Resolve credentials from explicit args or saved session."""
+    if bearer_token:
+        return create_bearer_auth(bearer_token)
+    if api_key:
+        return create_api_key_auth(api_key)
+    return get_credentials(agent_url)  # Load from session
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="MCP server not appearing in Claude">
+    1. Check Handler is installed and in PATH:
+       ```bash
+       which handler
+       handler --version
+       ```
+    
+    2. Verify config file path:
+       ```bash
+       cat ~/Library/Application\ Support/Claude/claude_desktop_config.json
+       ```
+    
+    3. Check Claude Desktop logs:
+       - macOS: `~/Library/Logs/Claude/`
+       - Look for MCP connection errors
+    
+    4. Test MCP server manually:
+       ```bash
+       handler mcp
+       # Should start without errors
+       ```
+  </Accordion>
+  
+  <Accordion title="Tools not working">
+    1. Verify agent is accessible:
+       ```bash
+       curl http://localhost:8000/.well-known/a2a/agent.json
+       ```
+    
+    2. Check session file permissions:
+       ```bash
+       ls -la ~/.handler/sessions.json
+       ```
+    
+    3. Test with CLI first:
+       ```bash
+       handler message send --url http://localhost:8000 "Test"
+       ```
+  </Accordion>
+  
+  <Accordion title="Authentication failures">
+    1. Verify credentials are saved:
+       ```bash
+       handler session list
+       ```
+    
+    2. Test credentials directly:
+       ```bash
+       handler message send \
+         --url http://localhost:8000 \
+         --bearer-token "your-token" \
+         "Test"
+       ```
+    
+    3. Clear and reset credentials:
+       ```bash
+       handler auth clear --url http://localhost:8000
+       handler auth set --url http://localhost:8000 --bearer-token "new-token"
+       ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Sessions" icon="clock-rotate-left">
+    Enable `use_session: true` for conversation continuity across tool calls.
+  </Card>
+  
+  <Card title="Validate First" icon="check">
+    Call `validate_agent_card` before sending messages to check agent capabilities.
+  </Card>
+  
+  <Card title="Save Credentials" icon="key">
+    Use `set_agent_credentials` instead of passing tokens in every call.
+  </Card>
+  
+  <Card title="Check Task State" icon="list-check">
+    Use `get_task` to poll long-running tasks until completion.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/guides/authentication">
+    Learn about bearer tokens and API keys
+  </Card>
+  
+  <Card title="Sessions" icon="clock-rotate-left" href="/guides/sessions">
+    Understand session management and persistence
+  </Card>
+  
+  <Card title="CLI Reference" icon="terminal" href="/cli/mcp">
+    Complete MCP command reference
+  </Card>
+  
+  <Card title="MCP Specification" icon="book-open" href="https://modelcontextprotocol.io/">
+    Official MCP protocol documentation
+  </Card>
+</CardGroup>

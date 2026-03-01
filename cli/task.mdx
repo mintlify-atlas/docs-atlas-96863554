@@ -1,0 +1,290 @@
+---
+title: 'Task Commands'
+description: 'Manage A2A tasks, including status checks, cancellation, and notifications'
+---
+
+The `task` command group provides functionality to manage A2A tasks, including retrieving task status, canceling tasks, resubscribing to task streams, and managing push notification configurations.
+
+## get
+
+Retrieve the current status and details of a task.
+
+```bash
+handler task get <agent_url> <task_id> [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent that owns the task
+</ParamField>
+
+<ParamField path="task_id" type="string" required>
+  Unique identifier of the task to retrieve
+</ParamField>
+
+### Options
+
+<ParamField path="--history-length" type="integer">
+  Number of history messages to include in the response. Short form: `-n`
+</ParamField>
+
+<ParamField path="--bearer" type="string">
+  Bearer token for authentication. Overrides saved credentials. Short form: `-b`
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  API key for authentication. Overrides saved credentials. Short form: `-k`
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Get task status
+handler task get http://localhost:8000 task_abc123
+```
+
+```bash Get task with history
+handler task get http://localhost:8000 task_abc123 --history-length 10
+```
+
+```bash Get task with authentication
+handler task get http://localhost:8000 task_abc123 --bearer eyJhbG...
+```
+</CodeGroup>
+
+### Response Format
+
+Successful responses include:
+
+- **Task ID**: The unique identifier of the task
+- **State**: Current state (e.g., `working`, `completed`, `cancelled`, `failed`)
+- **Context ID**: Associated conversation context (if available)
+- **Text**: Latest response or status message from the agent
+
+---
+
+## cancel
+
+Request cancellation of a running task.
+
+```bash
+handler task cancel <agent_url> <task_id> [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent that owns the task
+</ParamField>
+
+<ParamField path="task_id" type="string" required>
+  Unique identifier of the task to cancel
+</ParamField>
+
+### Options
+
+<ParamField path="--bearer" type="string">
+  Bearer token for authentication. Overrides saved credentials. Short form: `-b`
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  API key for authentication. Overrides saved credentials. Short form: `-k`
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Cancel a task
+handler task cancel http://localhost:8000 task_abc123
+```
+
+```bash Cancel with authentication
+handler task cancel http://localhost:8000 task_abc123 --bearer eyJhbG...
+```
+</CodeGroup>
+
+<Note>
+Cancellation is a request to the agent. The agent may complete some work before fully canceling, or may not support cancellation for certain task types.
+</Note>
+
+---
+
+## resubscribe
+
+Resubscribe to a task's Server-Sent Events (SSE) stream after disconnection. Useful for reconnecting to long-running tasks.
+
+```bash
+handler task resubscribe <agent_url> <task_id> [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent that owns the task
+</ParamField>
+
+<ParamField path="task_id" type="string" required>
+  Unique identifier of the task to resubscribe to
+</ParamField>
+
+### Options
+
+<ParamField path="--bearer" type="string">
+  Bearer token for authentication. Overrides saved credentials. Short form: `-b`
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  API key for authentication. Overrides saved credentials. Short form: `-k`
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Resubscribe to task stream
+handler task resubscribe http://localhost:8000 task_abc123
+```
+
+```bash Resubscribe with authentication
+handler task resubscribe http://localhost:8000 task_abc123 --bearer eyJhbG...
+```
+</CodeGroup>
+
+<Tip>
+Use `resubscribe` when your streaming connection drops but the task is still running on the agent. This reconnects you to receive ongoing updates.
+</Tip>
+
+---
+
+## notification set
+
+Configure a push notification webhook for a task. The agent will send updates to the specified URL as the task progresses.
+
+```bash
+handler task notification set <agent_url> <task_id> --url <webhook_url> [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent that owns the task
+</ParamField>
+
+<ParamField path="task_id" type="string" required>
+  Unique identifier of the task to configure notifications for
+</ParamField>
+
+### Options
+
+<ParamField path="--url" type="string" required>
+  Webhook URL to receive notifications. Short form: `-u`
+</ParamField>
+
+<ParamField path="--token" type="string">
+  Authentication token for the webhook. The agent will include this in notification requests. Short form: `-t`
+</ParamField>
+
+<ParamField path="--bearer" type="string">
+  Bearer token for agent authentication. Overrides saved credentials. Short form: `-b`
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  API key for agent authentication. Overrides saved credentials. Short form: `-k`
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Set notification webhook
+handler task notification set http://localhost:8000 task_abc123 \
+  --url http://localhost:9000/webhook
+```
+
+```bash Set webhook with authentication token
+handler task notification set http://localhost:8000 task_abc123 \
+  --url http://localhost:9000/webhook \
+  --token secret123
+```
+
+```bash Set with agent authentication
+handler task notification set http://localhost:8000 task_abc123 \
+  --url http://localhost:9000/webhook \
+  --bearer eyJhbG...
+```
+</CodeGroup>
+
+### Response Format
+
+Successful configuration includes:
+
+- **Task ID**: The task identifier
+- **URL**: The webhook URL
+- **Token**: Masked token (first 20 characters shown)
+- **Config ID**: Unique identifier for this notification configuration
+
+<Note>
+You can start a local webhook server using `handler server push` to receive notifications during development.
+</Note>
+
+---
+
+## notification get
+
+Retrieve the push notification configuration for a task.
+
+```bash
+handler task notification get <agent_url> <task_id> [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent that owns the task
+</ParamField>
+
+<ParamField path="task_id" type="string" required>
+  Unique identifier of the task
+</ParamField>
+
+### Options
+
+<ParamField path="--config-id" type="string">
+  Specific push notification config ID to retrieve. Short form: `-c`
+</ParamField>
+
+<ParamField path="--bearer" type="string">
+  Bearer token for authentication. Overrides saved credentials. Short form: `-b`
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  API key for authentication. Overrides saved credentials. Short form: `-k`
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Get notification config
+handler task notification get http://localhost:8000 task_abc123
+```
+
+```bash Get specific config
+handler task notification get http://localhost:8000 task_abc123 --config-id cfg_xyz
+```
+
+```bash Get with authentication
+handler task notification get http://localhost:8000 task_abc123 --bearer eyJhbG...
+```
+</CodeGroup>
+
+### Response Format
+
+Returns the notification configuration including:
+
+- **Task ID**: The task identifier
+- **URL**: The webhook URL
+- **Token**: Masked token value
+- **Config ID**: Unique configuration identifier
+
+<Warning>
+The token is masked in the output for security. Only the first 20 characters are shown.
+</Warning>

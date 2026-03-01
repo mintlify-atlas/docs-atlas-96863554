@@ -1,0 +1,625 @@
+---
+title: Agent Cards
+description: Understanding and validating A2A agent cards
+---
+
+## Overview
+
+Agent cards are JSON documents that describe an A2A agent's capabilities, skills, and authentication requirements. They follow the [A2A Protocol specification](https://a2a-protocol.org/) and are discovered at the well-known path:
+
+```
+{agent_url}/.well-known/a2a/agent.json
+```
+
+Handler provides tools for fetching, validating, and inspecting agent cards.
+
+## Agent Card Structure
+
+A typical agent card includes:
+
+```json agent.json
+{
+  "name": "Example Agent",
+  "description": "An example A2A agent",
+  "protocolVersion": "0.3.0",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "skills": [
+    {
+      "id": "weather",
+      "name": "Weather Information",
+      "description": "Get current weather and forecasts"
+    }
+  ],
+  "supportedContentTypes": [
+    "text/plain",
+    "application/json"
+  ],
+  "authenticationRequirements": [
+    {
+      "type": "bearer",
+      "description": "API authentication via bearer token"
+    }
+  ],
+  "transports": [
+    {
+      "protocol": "jsonrpc",
+      "url": "http://localhost:8000/a2a/v1/"
+    }
+  ]
+}
+```
+
+## Fetching Agent Cards
+
+<Tabs>
+  <Tab title="CLI">
+    Fetch and display an agent card:
+    
+    ```bash
+    handler card get http://localhost:8000
+    ```
+    
+    Output includes:
+    - Agent name and description
+    - Protocol version
+    - Capabilities (streaming, push notifications)
+    - Skills list
+    - Supported content types
+    - Authentication requirements
+    - Transport endpoints
+  </Tab>
+  
+  <Tab title="TUI">
+    The TUI automatically fetches and displays the agent card when you connect:
+    
+    <Steps>
+      <Step title="Connect to agent">
+        Enter the agent URL and click Connect.
+      </Step>
+      
+      <Step title="View in Agent Card Panel">
+        The Agent Card Panel displays:
+        
+        ```python app.py:128-134
+        async def _connect_to_agent(self, agent_url: str) -> AgentCard:
+            if not self.http_client:
+                raise RuntimeError("HTTP client not initialized")
+            
+            logger.info("Connecting to agent at %s", agent_url)
+            self._agent_service = A2AService(self.http_client, agent_url)
+            return await self._agent_service.get_card()
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="Python">
+    Programmatically fetch agent cards:
+    
+    ```python
+    import httpx
+    from a2a_handler.service import A2AService
+    
+    async def get_agent_card(agent_url: str):
+        async with httpx.AsyncClient() as client:
+            service = A2AService(client, agent_url)
+            card = await service.get_card()
+            print(f"Connected to: {card.name}")
+            print(f"Protocol: {card.protocol_version}")
+            return card
+    ```
+    
+    Implementation in `service.py:260-271`:
+    ```python
+    async def get_card(self) -> AgentCard:
+        """Fetch and cache the agent card.
+        
+        Returns:
+            The agent's card with metadata and capabilities
+        """
+        if self._cached_agent_card is None:
+            logger.info("Fetching agent card from %s", self.agent_url)
+            card_resolver = A2ACardResolver(self.http_client, self.agent_url)
+            self._cached_agent_card = await card_resolver.get_agent_card()
+            logger.info("Connected to agent: %s", self._cached_agent_card.name)
+        return self._cached_agent_card
+    ```
+  </Tab>
+  
+  <Tab title="MCP">
+    Use the MCP server's `get_agent_card` tool:
+    
+    ```python mcp/server.py:130-150
+    @mcp.tool()
+    async def get_agent_card(agent_url: str) -> dict:
+        """Retrieve an agent's card with full details.
+        
+        Fetches the agent card from the specified A2A agent URL.
+        
+        Args:
+            agent_url: Base URL of the A2A agent
+        
+        Returns:
+            The agent card as a dictionary with all available fields.
+        """
+        logger.info("Getting agent card from %s", agent_url)
+        
+        async with _build_http_client() as http_client:
+            service = A2AService(http_client, agent_url)
+            card = await service.get_card()
+            
+            return card.model_dump(exclude_none=True)
+    ```
+  </Tab>
+</Tabs>
+
+## Validating Agent Cards
+
+Handler validates agent cards against the A2A protocol specification using Pydantic models.
+
+<Tabs>
+  <Tab title="Validate from URL">
+    ```bash
+    handler card validate http://localhost:8000
+    ```
+    
+    Success output:
+    ```
+    Agent Card Validation
+    Status: Valid
+    Agent: Example Agent
+    Protocol Version: 0.3.0
+    
+    Capabilities:
+      Streaming: Yes
+      Push Notifications: No
+    
+    Skills: 2
+      - weather: Weather Information
+      - calculator: Basic calculations
+    ```
+    
+    Error output:
+    ```
+    Agent Card Validation
+    Status: Invalid
+    Source: http://localhost:8000
+    
+    Issues:
+      - protocolVersion: Field required
+      - capabilities.streaming: Input should be a valid boolean
+    ```
+  </Tab>
+  
+  <Tab title="Validate from file">
+    Validate a local agent card JSON file:
+    
+    ```bash
+    handler card validate --file ./agent.json
+    ```
+    
+    Implementation in `validation.py:158-215`:
+    ```python
+    def validate_agent_card_from_file(file_path: str | Path) -> ValidationResult:
+        """Validate an agent card from a local file.
+        
+        Args:
+            file_path: Path to the agent card JSON file
+        
+        Returns:
+            ValidationResult with validation status and any issues
+        """
+        path = Path(file_path)
+        logger.info("Validating agent card from file: %s", path)
+        
+        # File existence and permission checks...
+        
+        try:
+            with open(path, encoding="utf-8") as f:
+                card_data = json.load(f)
+            
+            agent_card = AgentCard.model_validate(card_data)
+            logger.info("Agent card validation successful for %s", agent_card.name)
+            
+            return ValidationResult(
+                valid=True,
+                source=str(path),
+                source_type=ValidationSource.FILE,
+                agent_card=agent_card,
+                raw_data=card_data,
+            )
+        
+        except ValidationError as e:
+            return ValidationResult(
+                valid=False,
+                source=str(path),
+                source_type=ValidationSource.FILE,
+                issues=_parse_validation_errors(e),
+                raw_data=card_data,
+            )
+    ```
+  </Tab>
+  
+  <Tab title="MCP">
+    Use the MCP server's `validate_agent_card` tool:
+    
+    ```python
+    @mcp.tool()
+    async def validate_agent_card(
+        source: str,
+        from_file: bool = False,
+    ) -> dict:
+        """Validate an A2A agent card from a URL or local file.
+        
+        Args:
+            source: URL of the agent or path to a local JSON file
+            from_file: If True, treat source as a file path
+        
+        Returns:
+            Dictionary with validation results, issues, and capabilities
+        """
+        result: ValidationResult
+        if from_file:
+            result = validate_agent_card_from_file(source)
+        else:
+            result = await validate_agent_card_from_url(source)
+        
+        response: dict = {
+            "valid": result.valid,
+            "source": result.source,
+            "agent_name": result.agent_name,
+            "protocol_version": result.protocol_version,
+        }
+        
+        if result.issues:
+            response["issues"] = [
+                {
+                    "field": issue.field_name,
+                    "message": issue.message,
+                    "type": issue.issue_type,
+                }
+                for issue in result.issues
+            ]
+        
+        return response
+    ```
+  </Tab>
+</Tabs>
+
+## Validation Result Structure
+
+Validation results include detailed information:
+
+<CodeGroup>
+```python validation.py:38-66
+@dataclass
+class ValidationResult:
+    """Result of validating an agent card."""
+    
+    valid: bool
+    source: str
+    source_type: ValidationSource
+    agent_card: AgentCard | None = None
+    issues: list[ValidationIssue] = field(default_factory=list)
+    raw_data: dict[str, Any] | None = None
+    
+    @property
+    def agent_name(self) -> str:
+        """Get the agent name if available."""
+        if self.agent_card:
+            return self.agent_card.name
+        if self.raw_data:
+            return self.raw_data.get("name", "Unknown")
+        return "Unknown"
+    
+    @property
+    def protocol_version(self) -> str:
+        """Get the protocol version if available."""
+        if self.agent_card:
+            return self.agent_card.protocol_version or "Unknown"
+        if self.raw_data:
+            return self.raw_data.get("protocolVersion", "Unknown")
+        return "Unknown"
+```
+
+```python validation.py:29-36
+@dataclass
+class ValidationIssue:
+    """Represents a single validation issue."""
+    
+    field_name: str
+    message: str
+    issue_type: str = "error"
+```
+</CodeGroup>
+
+## Understanding Capabilities
+
+Agent cards declare capabilities that affect how you interact with them:
+
+<Tabs>
+  <Tab title="Streaming">
+    Indicates whether the agent supports streaming responses:
+    
+    ```json
+    {
+      "capabilities": {
+        "streaming": true
+      }
+    }
+    ```
+    
+    Check in code:
+    ```python service.py:307-312
+    @property
+    def supports_streaming(self) -> bool:
+        """Check if the agent supports streaming."""
+        if self._cached_agent_card and self._cached_agent_card.capabilities:
+            return bool(self._cached_agent_card.capabilities.streaming)
+        return False
+    ```
+    
+    If supported, use streaming endpoints for real-time responses:
+    ```bash
+    handler message stream --url http://localhost:8000 "Hello!"
+    ```
+  </Tab>
+  
+  <Tab title="Push Notifications">
+    Indicates webhook support for task updates:
+    
+    ```json
+    {
+      "capabilities": {
+        "pushNotifications": true
+      }
+    }
+    ```
+    
+    Check in code:
+    ```python service.py:314-319
+    @property
+    def supports_push_notifications(self) -> bool:
+        """Check if the agent supports push notifications."""
+        if self._cached_agent_card and self._cached_agent_card.capabilities:
+            return bool(self._cached_agent_card.capabilities.push_notifications)
+        return False
+    ```
+    
+    If supported, configure webhooks:
+    ```bash
+    handler task set-notification \
+      --url http://localhost:8000 \
+      --task-id task-123 \
+      --webhook-url http://localhost:9000/webhook
+    ```
+  </Tab>
+</Tabs>
+
+## Skills Discovery
+
+Agent cards list available skills:
+
+```json
+{
+  "skills": [
+    {
+      "id": "weather",
+      "name": "Weather Information",
+      "description": "Get current weather and forecasts for any location"
+    },
+    {
+      "id": "calculator",
+      "name": "Calculator",
+      "description": "Perform basic arithmetic operations"
+    }
+  ]
+}
+```
+
+Skills help you understand what the agent can do before interacting.
+
+## Authentication Requirements
+
+Agent cards specify required authentication:
+
+```json
+{
+  "authenticationRequirements": [
+    {
+      "type": "bearer",
+      "description": "API authentication via bearer token"
+    }
+  ]
+}
+```
+
+Common types:
+- `bearer`: Bearer token in Authorization header
+- `api_key`: API key in custom header
+- `oauth2`: OAuth 2.0 flow
+- `none`: No authentication required
+
+See [Authentication Guide](/guides/authentication) for setup.
+
+## Transport Endpoints
+
+Cards declare protocol endpoints:
+
+```json
+{
+  "transports": [
+    {
+      "protocol": "jsonrpc",
+      "url": "http://localhost:8000/a2a/v1/"
+    },
+    {
+      "protocol": "grpc",
+      "url": "grpc://localhost:50051"
+    }
+  ]
+}
+```
+
+Handler currently supports `jsonrpc` transport.
+
+## Common Validation Issues
+
+<AccordionGroup>
+  <Accordion title="Missing required fields">
+    Error:
+    ```
+    Field required: protocolVersion
+    ```
+    
+    Fix: Add the missing field:
+    ```json
+    {
+      "protocolVersion": "0.3.0"
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Invalid capability values">
+    Error:
+    ```
+    capabilities.streaming: Input should be a valid boolean
+    ```
+    
+    Fix: Use boolean values:
+    ```json
+    {
+      "capabilities": {
+        "streaming": true,  // not "true" or 1
+        "pushNotifications": false
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Malformed JSON">
+    Error:
+    ```
+    Invalid JSON at line 5, column 3: Expecting ',' delimiter
+    ```
+    
+    Fix: Check JSON syntax:
+    ```bash
+    jq . agent.json
+    ```
+  </Accordion>
+  
+  <Accordion title="HTTP connection errors">
+    Error:
+    ```
+    Connection error: [Errno 111] Connection refused
+    ```
+    
+    Fix: Ensure agent server is running:
+    ```bash
+    # Check if agent is responding
+    curl http://localhost:8000/.well-known/a2a/agent.json
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Creating Valid Agent Cards
+
+When building your own agent:
+
+<Steps>
+  <Step title="Start with a template">
+    ```json agent.json
+    {
+      "name": "My Agent",
+      "description": "A brief description",
+      "protocolVersion": "0.3.0",
+      "capabilities": {
+        "streaming": true,
+        "pushNotifications": false
+      },
+      "skills": [],
+      "supportedContentTypes": ["text/plain"],
+      "transports": [
+        {
+          "protocol": "jsonrpc",
+          "url": "http://localhost:8000/a2a/v1/"
+        }
+      ]
+    }
+    ```
+  </Step>
+  
+  <Step title="Validate locally">
+    ```bash
+    handler card validate --file agent.json
+    ```
+  </Step>
+  
+  <Step title="Serve at well-known path">
+    Ensure your agent serves the card at:
+    ```
+    /.well-known/a2a/agent.json
+    ```
+  </Step>
+  
+  <Step title="Validate from URL">
+    ```bash
+    handler card validate http://localhost:8000
+    ```
+  </Step>
+</Steps>
+
+## Protocol Versions
+
+Handler supports A2A protocol version `0.3.0`. Check compatibility:
+
+```bash
+handler --version
+# a2a-handler 0.1.0 (A2A Protocol 0.3.0)
+```
+
+If an agent uses a different protocol version, validation may report compatibility warnings.
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Validate Early" icon="check">
+    Validate agent cards during development, not in production.
+  </Card>
+  
+  <Card title="Document Skills" icon="book">
+    Provide clear skill descriptions so clients understand capabilities.
+  </Card>
+  
+  <Card title="Specify Content Types" icon="file">
+    List all supported content types in `supportedContentTypes`.
+  </Card>
+  
+  <Card title="Update Protocol Version" icon="arrow-up">
+    Keep `protocolVersion` current with your implementation.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="TUI Guide" icon="window" href="/guides/tui">
+    Use agent cards in the interactive TUI
+  </Card>
+  
+  <Card title="Authentication" icon="key" href="/guides/authentication">
+    Configure authentication per card requirements
+  </Card>
+  
+  <Card title="CLI Reference" icon="terminal" href="/cli/card">
+    Complete card command reference
+  </Card>
+  
+  <Card title="A2A Protocol" icon="book-open" href="https://a2a-protocol.org/">
+    Official A2A protocol specification
+  </Card>
+</CardGroup>

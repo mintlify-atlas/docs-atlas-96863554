@@ -1,0 +1,536 @@
+---
+title: Contributing
+description: Guidelines for contributing to Handler development
+---
+
+Thank you for your interest in contributing to Handler! This guide will help you get started with development and explain our workflows.
+
+## Prerequisites
+
+Before you begin, make sure you have:
+
+- **Python 3.11 or later** - Handler uses modern Python features
+- **[uv](https://github.com/astral-sh/uv)** - Fast Python package manager
+- **[just](https://github.com/casey/just)** - Command runner for development tasks
+- **[Ollama](https://ollama.com/)** (optional) - For running the local server agent
+
+## Getting Started
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/alDuncanson/handler.git
+cd handler
+```
+
+### 2. Install Dependencies
+
+```bash
+just install
+```
+
+This will create a virtual environment and install all dependencies using `uv sync`.
+
+### 3. Verify Installation
+
+```bash
+just check
+```
+
+This runs linting, formatting checks, and type checking to ensure everything is set up correctly.
+
+## Development Workflow
+
+### Available Commands
+
+Run `just` with no arguments to see all available commands:
+
+```bash
+just
+```
+
+**Common commands:**
+
+```bash
+# Development
+just install    # Install all dependencies
+just check      # Run lint + format check + typecheck
+just fix        # Auto-fix lint and format issues
+just test       # Run pytest test suite
+
+# Running Handler
+just run           # Launch TUI (default)
+just run tui       # Launch TUI (explicit)
+just run web       # Serve TUI as web app
+just run --help    # Show CLI help
+
+# Direct CLI usage (via uv)
+uv run handler --help       # Show all CLI commands
+uv run handler tui          # Launch TUI
+uv run handler server agent # Start local server agent
+
+# Release (maintainers only)
+just version       # Show current version
+just bump patch    # Bump version (major|minor|patch)
+just release       # Tag and push release
+```
+
+### Running Tests
+
+```bash
+just test
+```
+
+Tests use pytest with pytest-asyncio for async tests. Add new tests in the `tests/` directory.
+
+### Code Quality Checks
+
+Before committing, always run:
+
+```bash
+just check
+```
+
+This runs:
+1. **Linting** - `ruff check .` - Catches common issues
+2. **Formatting** - `ruff format --check .` - Ensures consistent style
+3. **Type Checking** - `ty check` - Validates type hints
+
+**Auto-fix issues:**
+
+```bash
+just fix
+```
+
+This automatically fixes formatting and auto-fixable lint issues.
+
+## Code Style Guidelines
+
+### Python Standards
+
+- **Python 3.11+** with full type hints on all functions
+- **Formatting**: Use `ruff format` (PEP 8 compliant)
+- **Linting**: Pass `ruff check` with zero errors
+- **Type Checking**: Pass `ty check` with zero errors
+- **Testing**: Use pytest with pytest-asyncio
+
+### Type Hints
+
+All functions must have complete type hints:
+
+```python
+# Good
+def send_message(message: str, context_id: str | None = None) -> SendResult:
+    ...
+
+async def get_task(task_id: str) -> Task:
+    ...
+
+# Bad
+def send_message(message, context_id=None):
+    ...
+```
+
+### No Emojis
+
+**Important:** Do not use emojis in code, docs, comments, or UI.
+
+Instead, use Unicode symbols:
+
+```python
+# Good
+click.echo("\u2713 Success")  # Checkmark
+click.echo("\u2717 Failed")   # X mark
+click.echo("\u2192 Next")     # Arrow
+
+# Bad
+click.echo("\u2705 Success")  # Emoji
+```
+
+Common symbols:
+- `\u2713` - Checkmark
+- `\u2717` - X mark
+- `\u2192` - Right arrow
+- `\u2600` - Sun (for light theme)
+- `\u263E` - Moon (for dark theme)
+
+### Async Conventions
+
+All I/O operations should be async:
+
+```python
+# Good
+async def fetch_agent_card(url: str) -> AgentCard:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        return AgentCard.model_validate(response.json())
+
+# Bad (blocking I/O)
+def fetch_agent_card(url: str) -> AgentCard:
+    response = requests.get(url)
+    return AgentCard.model_validate(response.json())
+```
+
+### Logging
+
+Use the common logger:
+
+```python
+from a2a_handler.common import get_logger
+
+logger = get_logger(__name__)
+
+logger.debug("Detailed diagnostic info")
+logger.info("Key operation completed")
+logger.warning("Something unexpected")
+logger.error("Operation failed", exc_info=True)
+```
+
+**Logging levels:**
+- `DEBUG` - Detailed traces, request/response bodies
+- `INFO` - Key operations (connecting, sending, receiving)
+- `WARNING` - Unexpected but handled situations
+- `ERROR` - Failures and exceptions
+
+### Error Handling
+
+Let exceptions bubble up with context:
+
+```python
+# Good
+async def send_message(message: str) -> SendResult:
+    try:
+        result = await service.send(message)
+        return result
+    except httpx.HTTPError as e:
+        logger.error("Failed to send message: %s", e)
+        raise  # Let caller handle it
+
+# Bad (swallowing errors)
+async def send_message(message: str) -> SendResult:
+    try:
+        result = await service.send(message)
+        return result
+    except Exception:
+        return None  # Lost error context!
+```
+
+## Project Structure
+
+Understanding the codebase:
+
+```
+src/a2a_handler/
+├── cli/                 # CLI commands (rich-click)
+│   ├── __init__.py      # Main CLI entry point
+│   ├── auth.py          # Authentication commands
+│   ├── card.py          # Agent card commands
+│   ├── mcp.py           # MCP server commands
+│   ├── message.py       # Message send/stream commands
+│   ├── server.py        # Local server commands
+│   ├── session.py       # Session management commands
+│   └── task.py          # Task get/cancel/resubscribe commands
+├── common/              # Shared utilities
+│   ├── config.py        # Configuration
+│   ├── logging.py       # Logging setup
+│   └── output.py        # Output formatting
+├── mcp/                 # MCP server implementation
+│   └── server.py        # FastMCP server exposing A2A as tools
+├── server/              # Local A2A server agent
+│   ├── agent.py         # LLM agent (Google ADK + LiteLLM)
+│   ├── app.py           # Starlette A2A server app
+│   ├── card.py          # Agent card generation
+│   └── ollama.py        # Ollama utilities
+├── tui/                 # Textual TUI application
+│   ├── app.py           # Main TUI app
+│   ├── app.tcss         # TUI styles
+│   └── components/      # TUI widgets
+│       ├── artifacts.py
+│       ├── auth.py
+│       ├── card.py
+│       ├── contact.py
+│       ├── input.py
+│       ├── logs.py
+│       ├── messages.py
+│       └── tasks.py
+├── auth.py              # Authentication credentials
+├── service.py           # A2AService (core protocol operations)
+├── session.py           # Session persistence
+├── validation.py        # Agent card validation
+└── webhook.py           # Push notification webhook server
+```
+
+### Key Files
+
+**service.py** - Start here to understand A2A operations  
+**cli/__init__.py** - CLI entry point and command structure  
+**tui/app.py** - TUI main application  
+**mcp/server.py** - MCP tool definitions  
+**server/app.py** - Local A2A server setup  
+
+## Making Changes
+
+### 1. Create a Branch
+
+```bash
+git checkout -b feature/your-feature-name
+```
+
+### 2. Make Your Changes
+
+Edit the code, following our style guidelines.
+
+### 3. Run Tests
+
+```bash
+just test
+```
+
+Add tests for new functionality in `tests/`.
+
+### 4. Check Code Quality
+
+```bash
+just check
+```
+
+Fix any issues:
+
+```bash
+just fix
+```
+
+### 5. Commit Changes
+
+```bash
+git add .
+git commit -m "Add feature: description of your changes"
+```
+
+**Commit message guidelines:**
+- Use imperative mood ("Add feature" not "Added feature")
+- First line under 72 characters
+- Reference issues/PRs if applicable
+
+### 6. Push and Create PR
+
+```bash
+git push origin feature/your-feature-name
+```
+
+Then create a pull request on GitHub.
+
+## Development Tips
+
+### Running the TUI Locally
+
+```bash
+just run tui
+```
+
+Or with verbose logging:
+
+```bash
+uv run handler --verbose tui
+```
+
+### Testing CLI Commands
+
+```bash
+uv run handler --help
+uv run handler message send --agent http://localhost:8000 --message "Hello"
+```
+
+### Running the Local Server
+
+First, install and start Ollama:
+
+```bash
+# Install Ollama (https://ollama.com/)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull a model
+ollama pull llama3.2:1b
+
+# Verify it's running
+ollama list
+```
+
+Then start Handler's server agent:
+
+```bash
+uv run handler server agent --port 8000
+```
+
+Connect to it:
+
+```bash
+uv run handler tui
+# Enter http://localhost:8000 as the agent URL
+```
+
+### Testing the MCP Server
+
+```bash
+uv run handler mcp start
+```
+
+Then configure it in Claude Desktop (see [MCP documentation](/cli/mcp)).
+
+### Debugging
+
+Enable debug logging:
+
+```bash
+uv run handler --debug tui
+uv run handler --debug message send --agent http://localhost:8000 --message "Hello"
+```
+
+Logs are written to:
+- TUI: In-app logs panel
+- CLI: stderr with rich formatting
+
+## Contributing Areas
+
+Ways you can contribute:
+
+### Code
+
+- Fix bugs reported in issues
+- Add new CLI commands
+- Enhance TUI components
+- Add new MCP tools
+- Improve error handling
+- Add tests
+
+### Documentation
+
+- Improve API documentation
+- Add code examples
+- Write tutorials
+- Fix typos
+
+### Testing
+
+- Write unit tests
+- Add integration tests
+- Test against different agents
+- Report bugs
+
+### Design
+
+- Improve TUI layouts
+- Enhance CLI output formatting
+- Suggest UX improvements
+
+## Key Libraries
+
+Familiarize yourself with these dependencies:
+
+**A2A Protocol:**
+- [a2a-sdk](https://github.com/a2aproject/a2a-sdk-python) - Official A2A Python SDK
+- [A2A Protocol Spec](https://a2a-protocol.org/latest/) - Protocol documentation
+
+**TUI:**
+- [Textual](https://textual.textualize.io/) - Terminal UI framework
+- [Rich](https://rich.readthedocs.io/) - Terminal formatting
+
+**CLI:**
+- [rich-click](https://github.com/ewels/rich-click) - Rich CLI framework
+- [Click](https://click.palletsprojects.com/) - CLI building toolkit
+
+**Server:**
+- [Google ADK](https://github.com/google/agent-developer-kit) - Agent Development Kit
+- [LiteLLM](https://github.com/BerriAI/litellm) - LLM provider abstraction
+- [Starlette](https://www.starlette.io/) - ASGI web framework
+
+**MCP:**
+- [MCP](https://modelcontextprotocol.io/) - Model Context Protocol
+- [FastMCP](https://github.com/jlowin/fastmcp) - FastMCP framework
+
+**HTTP:**
+- [httpx](https://www.python-httpx.org/) - Async HTTP client
+
+## Architecture Notes
+
+Understand these key concepts:
+
+### A2AService Layer
+
+`A2AService` in `service.py` is the core abstraction. Both CLI and TUI use it for all A2A operations. When adding features:
+
+1. Add the operation to `A2AService`
+2. Use it from CLI commands
+3. Use it from TUI event handlers
+4. Expose it via MCP tools
+
+This ensures consistency across all interfaces.
+
+### Session Persistence
+
+Sessions persist to `~/.handler/sessions.json` and store:
+- `context_id` - For conversation continuity
+- `task_id` - For task operations
+- `credentials` - For authentication
+
+When working with sessions:
+- Use `session.py` functions
+- Index by `agent_url`
+- Handle missing sessions gracefully
+
+### Streaming vs Non-Streaming
+
+Handler supports both patterns:
+
+**Non-streaming** (`service.send()`):
+- Collects all events
+- Returns final result
+- Simpler for CLI
+
+**Streaming** (`service.stream()`):
+- Yields events as they arrive
+- Better UX for TUI
+- More complex handling
+
+Choose based on your use case.
+
+## Release Process
+
+(Maintainers only)
+
+### 1. Bump Version
+
+```bash
+just bump patch  # or minor, or major
+```
+
+### 2. Create Release
+
+```bash
+just release
+```
+
+This creates a git tag and pushes it. GitHub Actions will automatically:
+- Run tests
+- Build package
+- Publish to PyPI
+
+## Getting Help
+
+If you need help:
+
+- **Issues**: [GitHub Issues](https://github.com/alDuncanson/handler/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/alDuncanson/handler/discussions)
+- **Documentation**: [Handler Docs](https://alduncanson.github.io/Handler/)
+
+## Code of Conduct
+
+Be respectful, inclusive, and collaborative. We're all here to build something useful.
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the same license as the project.
+
+## Questions?
+
+Don't hesitate to ask questions in issues or discussions. We're happy to help!

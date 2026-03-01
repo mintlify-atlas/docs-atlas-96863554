@@ -1,80 +1,367 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get started with Handler by sending your first message to an A2A agent
 ---
 
-## Get started in three steps
+This guide will walk you through your first interaction with an A2A agent using Handler. You'll learn the basic commands for sending messages, managing sessions, and exploring agent capabilities.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before starting, ensure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+1. **Installed Handler** - See the [installation guide](/installation)
+2. **Python 3.11+** installed on your system
+3. **An A2A agent URL** to connect to (or use the local server setup below)
 
-### Step 2: Deploy your changes
+<Note>
+If you don't have an A2A agent to test with, you can run Handler's built-in local agent (see [Running a local agent](#running-a-local-agent) below).
+</Note>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
+## Your first message
+
+Let's send a simple message to an A2A agent:
+
+<Steps>
+  <Step title="Send a message">
+    Use the `message send` command to send text to an agent:
+
+    ```bash
+    handler message send https://agent.example.com "Hello, what can you do?"
+    ```
+
+    Handler will connect to the agent, send your message, and display the response:
+
+    ```
+    Sending to https://agent.example.com...
+
+    Context ID: 550e8400-e29b-41d4-a716-446655440000
+    Task ID: 660e8400-e29b-41d4-a716-446655440001
+    State: completed
+
+    Hello! I'm an A2A agent. I can help you with various tasks...
+    ```
+
+    <Note>
+    The `context_id` and `task_id` are automatically saved to your session for conversation continuity.
+    </Note>
+  </Step>
+
+  <Step title="Continue the conversation">
+    Send a follow-up message using the saved session:
+
+    ```bash
+    handler message send https://agent.example.com "Tell me more" --continue
+    ```
+
+    The `--continue` flag (or `-C`) uses the saved context and task IDs from your previous interaction.
+  </Step>
+
+  <Step title="Stream responses in real-time">
+    For long-running tasks or streaming responses, use the `stream` command:
+
+    ```bash
+    handler message stream https://agent.example.com "Write a short poem"
+    ```
+
+    You'll see the response appear word-by-word as the agent generates it:
+
+    ```
+    Sending to https://agent.example.com...
+    In circuits deep and pathways bright,
+    Where data flows through endless night,
+    An agent works with tireless grace,
+    Connecting worlds in cyberspace.
+
+    Context ID: 770e8400-e29b-41d4-a716-446655440002
+    Task ID: 880e8400-e29b-41d4-a716-446655440003
+    State: completed
+    ```
+  </Step>
+</Steps>
+
+## Exploring agent capabilities
+
+Before interacting with an agent, you can inspect its capabilities:
+
+### Get the agent card
+
+```bash
+handler card get https://agent.example.com
+```
+
+This displays the agent's metadata, including:
+
+- Name and description
+- Supported skills
+- Capabilities (streaming, push notifications)
+- Content types (text, markdown, images)
+- Authentication requirements
+
+### Validate the agent card
+
+Ensure an agent card is valid according to A2A protocol:
+
+```bash
+handler card validate https://agent.example.com
+```
+
+Output:
+```
+Agent Card Validation
+
+Valid: Yes
+Agent: Example Agent
+Protocol Version: 0.3.0
+Source: https://agent.example.com
+
+Capabilities:
+  - Streaming: Yes
+  - Push Notifications: Yes
+
+Skills:
+  - weather: Get current weather information
+  - calculator: Perform mathematical calculations
+```
+
+## Using the terminal UI (TUI)
+
+For a more interactive experience, launch Handler's terminal user interface:
+
+```bash
+handler tui
+```
+
+The TUI provides:
+
+- **Visual agent card display** with syntax highlighting
+- **Real-time message streaming** with markdown rendering
+- **Task and artifact management** in dedicated tabs
+- **Session persistence** across restarts
+- **Debug logs** for troubleshooting
+
+Navigate the TUI:
+
+- `Ctrl+Q` - Quit
+- `/` - Command palette
+- `Ctrl+M` - Maximize focused panel
+- `Tab` - Switch focus between panels
+
+<Note>
+You can also serve the TUI as a web application:
+
+```bash
+handler web --port 8001
+```
+
+Then open http://localhost:8001 in your browser.
+</Note>
+
+## Working with sessions
+
+Handler automatically manages sessions for conversation continuity:
+
+### List all sessions
+
+```bash
+handler session list
+```
+
+Output:
+```
+Saved Sessions
+
+https://agent.example.com
+  Context ID: 550e8400-e29b-41d4-a716-446655440000
+  Task ID: 660e8400-e29b-41d4-a716-446655440001
+  Credentials: Yes
+
+https://another-agent.com
+  Context ID: 990e8400-e29b-41d4-a716-446655440004
+  Credentials: No
+```
+
+### View a specific session
+
+```bash
+handler session show https://agent.example.com
+```
+
+### Clear session data
+
+```bash
+# Clear specific agent
+handler session clear https://agent.example.com
+
+# Clear all sessions
+handler session clear --all
+```
+
+## Authentication
+
+Many A2A agents require authentication. Handler supports bearer tokens and API keys:
+
+### Set credentials
+
+<CodeGroup>
+```bash Bearer token
+handler auth set https://agent.example.com --bearer "your-token-here"
+```
+
+```bash API key
+handler auth set https://agent.example.com --api-key "your-api-key"
+```
+</CodeGroup>
+
+Credentials are securely stored in `~/.handler/sessions.json` and automatically used for future requests.
+
+### Inline authentication
+
+You can also provide credentials per-request:
+
+```bash
+handler message send https://agent.example.com "Hello" --bearer "token"
+```
+
+### Clear credentials
+
+```bash
+handler auth clear https://agent.example.com
+```
+
+## Running a local agent
+
+Handler includes a reference A2A agent implementation for testing:
+
+```bash
+handler server agent --port 8000
+```
+
+This starts a local agent at http://localhost:8000 that you can interact with:
+
+```bash
+# In another terminal
+handler message send http://localhost:8000 "Hello, local agent!"
+```
+
+The local agent uses LiteLLM for provider abstraction and supports:
+
+- OpenAI, Anthropic, Google, and other LLM providers
+- Ollama for local models
+- Custom system prompts
+- Streaming responses
+
+<Accordion title="Configure the local agent">
+  Set environment variables to customize the agent:
+
+  ```bash
+  export LITELLM_MODEL=gpt-4o-mini
+  export OPENAI_API_KEY=your-key-here
+  export AGENT_NAME="My Custom Agent"
+  export AGENT_DESCRIPTION="A helpful assistant"
+  
+  handler server agent --port 8000
+  ```
+
+  For Ollama:
+
+  ```bash
+  export LITELLM_MODEL=ollama/llama3.2
+  handler server agent --port 8000
+  ```
 </Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## Task management
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+For long-running tasks, you can check status and cancel if needed:
 
-### Step 3: Go live
+### Get task status
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+```bash
+handler task get https://agent.example.com --task-id "task-123"
+```
+
+### Cancel a task
+
+```bash
+handler task cancel https://agent.example.com --task-id "task-123"
+```
+
+### Set up push notifications
+
+Get notified when a task completes:
+
+```bash
+# Start a webhook receiver (in one terminal)
+handler server push --port 9000
+
+# Set notification for a task (in another terminal)
+handler task notification set https://agent.example.com \
+  --task-id "task-123" \
+  --push-url "http://localhost:9000/webhook"
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+Now that you've sent your first messages, explore more advanced features:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="CLI reference" icon="terminal" href="/cli/message">
+    Complete reference for all CLI commands and options
+  </Card>
+  <Card title="TUI guide" icon="window" href="/guides/tui">
+    Master the terminal user interface
+  </Card>
+  <Card title="MCP integration" icon="plug" href="/guides/mcp-integration">
+    Connect Handler to Claude Desktop and other AI assistants
+  </Card>
+  <Card title="Local server" icon="server" href="/cli/server">
+    Configure and deploy your own A2A agent
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Common patterns
+
+### Quick checks
+
+```bash
+# Check if an agent is online
+handler card get https://agent.example.com
+
+# Validate before sending messages
+handler card validate https://agent.example.com
+
+# View current version
+handler version
+```
+
+### Debugging
+
+```bash
+# Enable verbose logging
+handler --verbose message send https://agent.example.com "test"
+
+# Enable debug logging
+handler --debug message send https://agent.example.com "test"
+```
+
+### Scripting
+
+```bash
+#!/bin/bash
+# Send multiple messages in sequence
+
+AGENT_URL="https://agent.example.com"
+
+handler message send $AGENT_URL "Initialize task" --continue
+handler message send $AGENT_URL "Process data" --continue  
+handler message send $AGENT_URL "Generate report" --continue
+```
+
+<Warning>
+Remember to handle authentication in automated scripts. Store tokens in environment variables or use Handler's credential storage:
+
+```bash
+export AGENT_TOKEN="your-token"
+handler auth set $AGENT_URL --bearer "$AGENT_TOKEN"
+```
+</Warning>

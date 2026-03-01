@@ -1,0 +1,609 @@
+---
+title: Session Management
+description: Persist context, task IDs, and credentials across Handler invocations
+---
+
+## Overview
+
+Handler's session management system persists conversation state across CLI invocations and TUI sessions. Sessions store:
+
+- **context_id**: Conversation context for continuity
+- **task_id**: Current or most recent task
+- **credentials**: Authentication tokens (bearer, API key)
+
+Sessions are stored in `~/.handler/sessions.json` and automatically loaded when interacting with known agents.
+
+## Session Storage Location
+
+Sessions are stored in your home directory:
+
+```bash
+~/.handler/sessions.json
+```
+
+The directory is created automatically on first use:
+
+```python session.py:17-18
+DEFAULT_SESSION_DIRECTORY = Path.home() / ".handler"
+SESSION_FILENAME = "sessions.json"
+```
+
+## Session Data Structure
+
+Each agent URL maps to a session:
+
+<CodeGroup>
+```python session.py:21-46
+@dataclass
+class AgentSession:
+    """Session state for a single agent."""
+    
+    agent_url: str
+    context_id: str | None = None
+    task_id: str | None = None
+    credentials: AuthCredentials | None = None
+    
+    def update(
+        self,
+        context_id: str | None = None,
+        task_id: str | None = None,
+        credentials: AuthCredentials | None = None,
+    ) -> None:
+        """Update session with new values (only if provided)."""
+        if context_id is not None:
+            self.context_id = context_id
+        if task_id is not None:
+            self.task_id = task_id
+        if credentials is not None:
+            self.credentials = credentials
+    
+    def clear_credentials(self) -> None:
+        """Clear stored credentials."""
+        self.credentials = None
+```
+</CodeGroup>
+
+### Example Session File
+
+```json sessions.json
+{
+  "http://localhost:8000": {
+    "context_id": "ctx-abc123-def456",
+    "task_id": "task-xyz789",
+    "credentials": {
+      "auth_type": "bearer",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "header_name": null
+    }
+  },
+  "https://api.example.com": {
+    "context_id": "ctx-conversation-42",
+    "task_id": "task-processing-99",
+    "credentials": {
+      "auth_type": "api_key",
+      "value": "sk-1234567890abcdef",
+      "header_name": "X-API-Key"
+    }
+  }
+}
+```
+
+## Automatic Session Management
+
+Handler automatically saves session state after each interaction:
+
+<CodeGroup>
+```python session.py:130-148
+def update(
+    self,
+    agent_url: str,
+    context_id: str | None = None,
+    task_id: str | None = None,
+    credentials: AuthCredentials | None = None,
+) -> AgentSession:
+    """Update session for an agent and save."""
+    agent_session = self.get(agent_url)
+    agent_session.update(context_id, task_id, credentials)
+    self.save()  # Automatically persists to disk
+    logger.debug(
+        "Updated session for %s: context_id=%s, task_id=%s, has_credentials=%s",
+        agent_url,
+        context_id,
+        task_id,
+        credentials is not None,
+    )
+    return agent_session
+```
+</CodeGroup>
+
+In the MCP server, sessions update after each message:
+
+```python mcp/server.py:203-204
+result = await service.send(message, context_id, task_id)
+update_session(agent_url, result.context_id, result.task_id)
+```
+
+## Using Sessions with the CLI
+
+<Tabs>
+  <Tab title="Automatic Use">
+    Sessions are automatically loaded and used:
+    
+    ```bash
+    # First interaction - creates new session
+    handler message send \
+      --url http://localhost:8000 \
+      "What can you help me with?"
+    # Session saved: context_id=ctx-123, task_id=task-456
+    
+    # Second interaction - uses saved session
+    handler message send \
+      --url http://localhost:8000 \
+      "Tell me more about the first feature"
+    # Uses context_id=ctx-123 for continuity
+    ```
+    
+    The CLI loads sessions on startup:
+    
+    ```python session.py:200-207
+    def get_session_store() -> SessionStore:
+        """Get the global session store (singleton)."""
+        global _global_session_store
+        if _global_session_store is None:
+            _global_session_store = SessionStore()
+            _global_session_store.load()  # Load from disk
+            logger.debug("Initialized global session store")
+        return _global_session_store
+    ```
+  </Tab>
+  
+  <Tab title="Override Context">
+    Start a new conversation context:
+    
+    ```bash
+    handler message send \
+      --url http://localhost:8000 \
+      --context-id "new-context-$(uuidgen)" \
+      "Start fresh conversation"
+    ```
+    
+    Or clear the session first:
+    
+    ```bash
+    handler session clear http://localhost:8000
+    handler message send --url http://localhost:8000 "New conversation"
+    ```
+  </Tab>
+</Tabs>
+
+## Managing Sessions
+
+<Steps>
+  <Step title="List all sessions">
+    View all saved sessions:
+    
+    ```bash
+    handler session list
+    ```
+    
+    Output:
+    ```
+    Saved Sessions (3)
+    
+    http://localhost:8000
+      Context ID: ctx-abc123
+      Task ID: task-xyz789
+    
+    https://api.example.com
+      Context ID: ctx-def456
+      Task ID: task-uvw321
+    
+    http://agent.local:3000
+      Context ID: ctx-ghi789
+    ```
+    
+    Implementation:
+    ```python cli/session.py:17-35
+    @session.command("list")
+    def session_list() -> None:
+        """List all saved sessions."""
+        output = Output()
+        store = get_session_store()
+        sessions = store.list_all()
+        
+        if not sessions:
+            output.dim("No saved sessions")
+            return
+        
+        output.header(f"Saved Sessions ({len(sessions)})")
+        for s in sessions:
+            output.blank()
+            output.subheader(s.agent_url)
+            if s.context_id:
+                output.field("Context ID", s.context_id, dim_value=True)
+            if s.task_id:
+                output.field("Task ID", s.task_id, dim_value=True)
+    ```
+  </Step>
+  
+  <Step title="View specific session">
+    Show details for a single agent:
+    
+    ```bash
+    handler session show http://localhost:8000
+    ```
+    
+    Output:
+    ```
+    Session for http://localhost:8000
+    Context ID: ctx-abc123-def456
+    Task ID: task-xyz789-uvw321
+    ```
+  </Step>
+  
+  <Step title="Clear sessions">
+    Clear a specific agent's session:
+    
+    ```bash
+    handler session clear http://localhost:8000
+    ```
+    
+    Or clear all sessions:
+    
+    ```bash
+    handler session clear --all
+    ```
+    
+    Implementation:
+    ```python session.py:175-190
+    def clear(self, agent_url: str | None = None) -> None:
+        """Clear session(s).
+        
+        Args:
+            agent_url: If provided, clear only that agent's session.
+                      Otherwise, clear all sessions.
+        """
+        if agent_url:
+            if agent_url in self.sessions:
+                del self.sessions[agent_url]
+                logger.info("Cleared session for %s", agent_url)
+        else:
+            session_count = len(self.sessions)
+            self.sessions.clear()
+            logger.info("Cleared all %d sessions", session_count)
+        self.save()
+    ```
+  </Step>
+</Steps>
+
+## Session Persistence
+
+Sessions are loaded on demand and saved after modifications:
+
+<CodeGroup>
+```python session.py:65-96
+def load(self) -> None:
+    """Load sessions from disk."""
+    if not self.session_file_path.exists():
+        logger.debug("No session file found at %s", self.session_file_path)
+        return
+    
+    try:
+        with open(self.session_file_path) as session_file:
+            session_data = json.load(session_file)
+        
+        for agent_url, agent_session_data in session_data.items():
+            credentials = None
+            if cred_data := agent_session_data.get("credentials"):
+                credentials = AuthCredentials.from_dict(cred_data)
+            
+            self.sessions[agent_url] = AgentSession(
+                agent_url=agent_url,
+                context_id=agent_session_data.get("context_id"),
+                task_id=agent_session_data.get("task_id"),
+                credentials=credentials,
+            )
+        
+        logger.debug(
+            "Loaded %d sessions from %s",
+            len(self.sessions),
+            self.session_file_path,
+        )
+    
+    except json.JSONDecodeError as error:
+        logger.warning("Failed to parse session file: %s", error)
+    except OSError as error:
+        logger.warning("Failed to read session file: %s", error)
+```
+
+```python session.py:98-121
+def save(self) -> None:
+    """Save sessions to disk."""
+    self._ensure_directory_exists()
+    
+    session_data: dict[str, Any] = {}
+    for agent_url, agent_session in self.sessions.items():
+        data: dict[str, Any] = {
+            "context_id": agent_session.context_id,
+            "task_id": agent_session.task_id,
+        }
+        if agent_session.credentials:
+            data["credentials"] = agent_session.credentials.to_dict()
+        session_data[agent_url] = data
+    
+    try:
+        with open(self.session_file_path, "w") as session_file:
+            json.dump(session_data, session_file, indent=2)
+        logger.debug(
+            "Saved %d sessions to %s",
+            len(self.sessions),
+            self.session_file_path,
+        )
+    except OSError as error:
+        logger.warning("Failed to write session file: %s", error)
+```
+</CodeGroup>
+
+## Context Continuity
+
+Context IDs enable multi-turn conversations with agents:
+
+```python
+# First message: creates new context
+result1 = await service.send("What's the weather?")
+# context_id: "ctx-abc123"
+
+# Second message: uses same context
+result2 = await service.send("How about tomorrow?", context_id=result1.context_id)
+# Agent has context from first message
+```
+
+The TUI manages context automatically:
+
+```python app.py:162-163
+self.current_agent_url = agent_url
+self.current_context_id = str(uuid.uuid4())  # New context per connection
+```
+
+```python app.py:218-224
+send_result = await self._agent_service.send(
+    message_text,
+    context_id=self.current_context_id,  # Reuse context
+)
+
+if send_result.context_id:
+    self.current_context_id = send_result.context_id  # Update if changed
+```
+
+## Using Sessions with MCP
+
+The MCP server provides tools for session management:
+
+<Tabs>
+  <Tab title="list_sessions">
+    ```python
+    @mcp.tool()
+    async def list_sessions() -> dict:
+        """List all saved sessions.
+        
+        Returns:
+            count: Number of saved sessions
+            sessions: List with agent_url, context_id, task_id, has_credentials
+        """
+        store = get_session_store()
+        sessions = store.list_all()
+        
+        return {
+            "count": len(sessions),
+            "sessions": [
+                {
+                    "agent_url": s.agent_url,
+                    "context_id": s.context_id,
+                    "task_id": s.task_id,
+                    "has_credentials": s.credentials is not None,
+                }
+                for s in sessions
+            ],
+        }
+    ```
+  </Tab>
+  
+  <Tab title="get_session_info">
+    ```python
+    @mcp.tool()
+    async def get_session_info(agent_url: str) -> dict:
+        """Get session information for a specific agent."""
+        session = get_session(agent_url)
+        
+        return {
+            "agent_url": session.agent_url,
+            "context_id": session.context_id,
+            "task_id": session.task_id,
+            "has_credentials": session.credentials is not None,
+        }
+    ```
+  </Tab>
+  
+  <Tab title="clear_session_data">
+    ```python
+    @mcp.tool()
+    async def clear_session_data(agent_url: str | None = None) -> dict:
+        """Clear saved session data.
+        
+        Does not clear credentials - use clear_agent_credentials for that.
+        
+        Args:
+            agent_url: URL of agent to clear. If None, clears ALL sessions.
+        """
+        if agent_url:
+            clear_session(agent_url)
+            return {"cleared": f"Session for {agent_url}"}
+        else:
+            clear_session()
+            return {"cleared": "All sessions"}
+    ```
+  </Tab>
+</Tabs>
+
+## Credentials in Sessions
+
+Sessions can store authentication credentials for automatic reuse:
+
+<Steps>
+  <Step title="Save credentials">
+    ```bash
+    handler auth set \
+      --url http://localhost:8000 \
+      --bearer-token "your-token"
+    ```
+    
+    ```python session.py:150-160
+    def set_credentials(
+        self,
+        agent_url: str,
+        credentials: AuthCredentials,
+    ) -> AgentSession:
+        """Set credentials for an agent."""
+        agent_session = self.get(agent_url)
+        agent_session.credentials = credentials
+        self.save()
+        logger.info("Set credentials for %s", agent_url)
+        return agent_session
+    ```
+  </Step>
+  
+  <Step title="Auto-load credentials">
+    Credentials are automatically applied:
+    
+    ```python service.py:236-242
+    def __init__(
+        self,
+        http_client: httpx.AsyncClient,
+        agent_url: str,
+        # ...
+        credentials: AuthCredentials | None = None,
+    ) -> None:
+        # ...
+        if credentials:
+            self.set_credentials(credentials)
+    ```
+  </Step>
+  
+  <Step title="Clear credentials">
+    Remove only credentials (keep context/task):
+    
+    ```bash
+    handler auth clear --url http://localhost:8000
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Credentials in `sessions.json` are stored in plain text. See [Authentication Security](/guides/authentication#security-considerations) for best practices.
+</Warning>
+
+## Session File Permissions
+
+Protect your session file:
+
+```bash
+chmod 600 ~/.handler/sessions.json
+chmod 700 ~/.handler
+```
+
+Add to `.gitignore` if working in a repo:
+
+```gitignore .gitignore
+.handler/
+sessions.json
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Session not loading">
+    Check if the session file exists and is valid JSON:
+    
+    ```bash
+    cat ~/.handler/sessions.json | jq
+    ```
+    
+    If corrupt, backup and recreate:
+    
+    ```bash
+    mv ~/.handler/sessions.json ~/.handler/sessions.json.bak
+    handler session list
+    ```
+  </Accordion>
+  
+  <Accordion title="Context not persisting">
+    Verify session is being saved:
+    
+    ```bash
+    handler message send --url http://localhost:8000 "Test"
+    handler session show http://localhost:8000
+    ```
+    
+    Check for write permissions:
+    
+    ```bash
+    ls -la ~/.handler/
+    ```
+  </Accordion>
+  
+  <Accordion title="Credentials not working">
+    List sessions to verify credentials are saved:
+    
+    ```bash
+    handler session list
+    ```
+    
+    Check the session file:
+    
+    ```bash
+    jq '."http://localhost:8000".credentials' ~/.handler/sessions.json
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="One Session Per Agent" icon="server">
+    Each agent URL gets its own session. Use different URLs (ports, paths) for different agent instances.
+  </Card>
+  
+  <Card title="Clear Stale Sessions" icon="broom">
+    Periodically clear old sessions:
+    ```bash
+    handler session clear --all
+    ```
+  </Card>
+  
+  <Card title="Explicit Context" icon="code">
+    For critical workflows, pass `--context-id` explicitly rather than relying on session state.
+  </Card>
+  
+  <Card title="Backup Sessions" icon="floppy-disk">
+    Before major changes:
+    ```bash
+    cp ~/.handler/sessions.json ~/.handler/sessions.json.bak
+    ```
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/guides/authentication">
+    Learn about bearer tokens and API keys
+  </Card>
+  
+  <Card title="TUI Guide" icon="window" href="/guides/tui">
+    Use sessions in the interactive TUI
+  </Card>
+  
+  <Card title="CLI Reference" icon="terminal" href="/cli/session">
+    Complete session command reference
+  </Card>
+</CardGroup>

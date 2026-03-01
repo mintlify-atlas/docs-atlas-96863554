@@ -1,0 +1,443 @@
+---
+title: Authentication
+description: Configure bearer token and API key authentication for A2A agents
+---
+
+## Overview
+
+Handler supports two authentication schemes for communicating with protected A2A agents:
+
+- **Bearer Token**: OAuth-style token in the `Authorization` header
+- **API Key**: Custom or standard API key header (default: `X-API-Key`)
+
+Authentication credentials can be configured via the TUI, CLI options, or saved to session storage for automatic reuse.
+
+## Authentication Types
+
+Handler implements authentication through the `AuthCredentials` class:
+
+<CodeGroup>
+```python auth.py:18-40
+@dataclass
+class AuthCredentials:
+    """Authentication credentials for an agent.
+    
+    Stores the credential value and metadata about how to apply it.
+    """
+    
+    auth_type: AuthType
+    value: str
+    header_name: str | None = None  # For API key: custom header name
+    
+    def to_headers(self) -> dict[str, str]:
+        """Generate HTTP headers for this credential.
+        
+        Returns:
+            Dictionary of headers to include in requests
+        """
+        if self.auth_type == AuthType.BEARER:
+            return {"Authorization": f"Bearer {self.value}"}
+        elif self.auth_type == AuthType.API_KEY:
+            header = self.header_name or "X-API-Key"
+            return {header: self.value}
+        return {}
+```
+</CodeGroup>
+
+## Using Bearer Token Authentication
+
+Bearer tokens are commonly used with OAuth 2.0 and JWT-based authentication.
+
+<Tabs>
+  <Tab title="CLI">
+    Pass the token directly with each command:
+    
+    ```bash
+    handler message send \
+      --url http://localhost:8000 \
+      --bearer-token "your-token-here" \
+      "Hello!"
+    ```
+    
+    Or save the token to your session:
+    
+    ```bash
+    handler auth set \
+      --url http://localhost:8000 \
+      --bearer-token "your-token-here"
+    
+    # Future commands use the saved token automatically
+    handler message send --url http://localhost:8000 "Hello!"
+    ```
+  </Tab>
+  
+  <Tab title="TUI">
+    <Steps>
+      <Step title="Open authentication panel">
+        In the Messages Panel, locate the authentication configuration section.
+      </Step>
+      
+      <Step title="Select Bearer Token">
+        Choose the "Bearer Token" radio button.
+      </Step>
+      
+      <Step title="Enter token">
+        Input your bearer token in the password-protected field:
+        
+        ```python auth.py:40-42
+        with Vertical(id="bearer-fields", classes="auth-fields hidden"):
+            yield Label("Bearer Token")
+            yield Input(placeholder="Enter bearer token", id="bearer-token-input", password=True)
+        ```
+      </Step>
+      
+      <Step title="Send message">
+        The token is automatically included with subsequent messages:
+        
+        ```python app.py:214-216
+        credentials = messages_panel.get_auth_credentials()
+        if credentials:
+            self._agent_service.set_credentials(credentials)
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="MCP Server">
+    When using Handler's MCP server from AI assistants:
+    
+    ```json
+    // The assistant calls the send_message tool
+    {
+      "agent_url": "http://localhost:8000",
+      "message": "Hello!",
+      "bearer_token": "your-token-here"
+    }
+    ```
+    
+    The MCP server resolves credentials in this order:
+    
+    ```python mcp/server.py:38-48
+    def _resolve_credentials(
+        agent_url: str,
+        bearer_token: str | None = None,
+        api_key: str | None = None,
+    ) -> AuthCredentials | None:
+        """Resolve credentials from explicit args or saved session."""
+        if bearer_token:
+            return create_bearer_auth(bearer_token)
+        if api_key:
+            return create_api_key_auth(api_key)
+        return get_credentials(agent_url)
+    ```
+  </Tab>
+</Tabs>
+
+### How Bearer Tokens Work
+
+When you set a bearer token, Handler adds it to the `Authorization` header:
+
+```python auth.py:60-62
+def create_bearer_auth(token: str) -> AuthCredentials:
+    """Create bearer token authentication."""
+    return AuthCredentials(auth_type=AuthType.BEARER, value=token)
+```
+
+HTTP request:
+```http
+POST /a2a/v1/messages HTTP/1.1
+Host: localhost:8000
+Authorization: Bearer your-token-here
+Content-Type: application/json
+```
+
+## Using API Key Authentication
+
+API key authentication allows custom header names for flexibility with different agent implementations.
+
+<Tabs>
+  <Tab title="CLI">
+    Using the default `X-API-Key` header:
+    
+    ```bash
+    handler message send \
+      --url http://localhost:8000 \
+      --api-key "your-api-key" \
+      "Hello!"
+    ```
+    
+    Using a custom header name:
+    
+    ```bash
+    handler message send \
+      --url http://localhost:8000 \
+      --api-key "your-api-key" \
+      --api-key-header "X-Custom-API-Key" \
+      "Hello!"
+    ```
+    
+    Save to session:
+    
+    ```bash
+    handler auth set \
+      --url http://localhost:8000 \
+      --api-key "your-api-key"
+    ```
+  </Tab>
+  
+  <Tab title="TUI">
+    <Steps>
+      <Step title="Select API Key type">
+        In the authentication panel, choose "API Key".
+      </Step>
+      
+      <Step title="Configure API key">
+        Enter your API key and optionally customize the header name:
+        
+        ```python auth.py:32-36
+        with Vertical(id="api-key-fields", classes="auth-fields hidden"):
+            yield Label("API Key")
+            yield Input(placeholder="Enter API key", id="api-key-input", password=True)
+            yield Label("Header Name")
+            yield Input(placeholder="X-API-Key", id="api-key-header-input")
+        ```
+      </Step>
+      
+      <Step title="Apply credentials">
+        The TUI extracts your configuration:
+        
+        ```python auth.py:73-79
+        if pressed.id == "auth-api-key":
+            api_key = self.query_one("#api-key-input", Input).value
+            header_name = (
+                self.query_one("#api-key-header-input", Input).value or "X-API-Key"
+            )
+            if api_key:
+                return create_api_key_auth(api_key, header_name=header_name)
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="MCP Server">
+    ```json
+    {
+      "agent_url": "http://localhost:8000",
+      "message": "Hello!",
+      "api_key": "your-api-key"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### How API Keys Work
+
+API key credentials are sent in a custom header:
+
+```python auth.py:65-79
+def create_api_key_auth(
+    key: str,
+    header_name: str = "X-API-Key",
+) -> AuthCredentials:
+    """Create API key authentication.
+    
+    Args:
+        key: The API key value
+        header_name: Header name to use (default: X-API-Key)
+    """
+    return AuthCredentials(
+        auth_type=AuthType.API_KEY,
+        value=key,
+        header_name=header_name,
+    )
+```
+
+HTTP request:
+```http
+POST /a2a/v1/messages HTTP/1.1
+Host: localhost:8000
+X-API-Key: your-api-key
+Content-Type: application/json
+```
+
+## Credential Application
+
+Credentials are applied to HTTP requests through the `A2AService`:
+
+<CodeGroup>
+```python service.py:244-259
+def set_credentials(self, credentials: AuthCredentials) -> None:
+    """Set or update authentication credentials.
+    
+    Args:
+        credentials: Authentication credentials to apply
+    """
+    # Remove old auth headers
+    for header_name in self._applied_auth_headers:
+        self.http_client.headers.pop(header_name, None)
+    self._applied_auth_headers.clear()
+    
+    # Apply new credentials
+    self.credentials = credentials
+    auth_headers = credentials.to_headers()
+    self.http_client.headers.update(auth_headers)
+    self._applied_auth_headers = set(auth_headers.keys())
+    logger.debug("Applied authentication headers: %s", list(auth_headers.keys()))
+```
+</CodeGroup>
+
+## Saving Credentials to Sessions
+
+Persist credentials across Handler invocations using session storage.
+
+<Steps>
+  <Step title="Set credentials">
+    ```bash
+    handler auth set \
+      --url http://localhost:8000 \
+      --bearer-token "your-token"
+    ```
+  </Step>
+  
+  <Step title="Verify storage">
+    Credentials are saved to `~/.handler/sessions.json`:
+    
+    ```json
+    {
+      "http://localhost:8000": {
+        "context_id": "ctx-123",
+        "task_id": "task-456",
+        "credentials": {
+          "auth_type": "bearer",
+          "value": "your-token",
+          "header_name": null
+        }
+      }
+    }
+    ```
+    
+    Implementation in `session.py:104-109`:
+    ```python
+    data: dict[str, Any] = {
+        "context_id": agent_session.context_id,
+        "task_id": agent_session.task_id,
+    }
+    if agent_session.credentials:
+        data["credentials"] = agent_session.credentials.to_dict()
+    ```
+  </Step>
+  
+  <Step title="Use automatically">
+    Future commands automatically load credentials:
+    
+    ```bash
+    # No --bearer-token needed
+    handler message send --url http://localhost:8000 "Hello!"
+    ```
+  </Step>
+</Steps>
+
+## Managing Credentials
+
+<Tabs>
+  <Tab title="View Credentials">
+    List sessions with credential status:
+    
+    ```bash
+    handler session list
+    ```
+    
+    Output:
+    ```
+    Saved Sessions (2)
+    
+    http://localhost:8000
+      Context ID: ctx-abc123
+      Task ID: task-xyz789
+      Credentials: Yes
+    
+    http://example.com
+      Context ID: ctx-def456
+      Credentials: No
+    ```
+  </Tab>
+  
+  <Tab title="Clear Credentials">
+    Remove credentials for a specific agent:
+    
+    ```bash
+    handler auth clear --url http://localhost:8000
+    ```
+    
+    Or via MCP:
+    
+    ```python
+    await clear_agent_credentials(agent_url="http://localhost:8000")
+    ```
+    
+    Implementation in `session.py:162-167`:
+    ```python
+    def clear_credentials(self, agent_url: str) -> None:
+        """Clear credentials for an agent."""
+        if agent_url in self.sessions:
+            self.sessions[agent_url].clear_credentials()
+            self.save()
+            logger.info("Cleared credentials for %s", agent_url)
+    ```
+  </Tab>
+</Tabs>
+
+## Security Considerations
+
+<Warning>
+  **Credential Storage Security**
+  
+  Credentials in `~/.handler/sessions.json` are stored in plain text. Ensure:
+  
+  - File permissions are restrictive (`chmod 600 ~/.handler/sessions.json`)
+  - Sessions file is excluded from version control
+  - Production credentials use environment variables or secret managers
+  - Rotate credentials regularly
+</Warning>
+
+<Tip>
+  For enhanced security in production:
+  
+  - Use short-lived tokens when possible
+  - Store credentials in environment variables
+  - Pass credentials via CLI flags instead of persisting
+  - Implement token refresh mechanisms
+</Tip>
+
+## Authentication Required State
+
+Agents can signal that authentication is required:
+
+```python service.py:91-93
+@property
+def needs_auth(self) -> bool:
+    """Check if the task requires authentication."""
+    return self.state == TaskState.auth_required if self.state else False
+```
+
+When a task enters `auth-required` state:
+
+1. Configure authentication credentials
+2. Resend the message or continue the task
+3. The agent processes the request with credentials
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Sessions" icon="clock-rotate-left" href="/guides/sessions">
+    Learn about session persistence and context management
+  </Card>
+  
+  <Card title="TUI Guide" icon="window" href="/guides/tui">
+    Use authentication in the interactive TUI
+  </Card>
+  
+  <Card title="CLI Reference" icon="terminal" href="/cli/auth">
+    Complete authentication CLI reference
+  </Card>
+</CardGroup>

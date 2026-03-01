@@ -1,0 +1,221 @@
+---
+title: 'Server Commands'
+description: 'Run local A2A agent and webhook servers'
+---
+
+The `server` command group provides functionality to run local servers for development and testing, including a full A2A agent server and a webhook server for push notifications.
+
+## agent
+
+Start a local A2A agent server powered by an LLM. The server implements the A2A protocol and can be used for testing, development, or running a local agent.
+
+```bash
+handler server agent [OPTIONS]
+```
+
+### Options
+
+<ParamField path="--host" type="string" default="0.0.0.0">
+  Host address to bind the server to. Default: `0.0.0.0` (all interfaces)
+</ParamField>
+
+<ParamField path="--port" type="integer" default="8000">
+  Port number to bind the server to. Default: `8000`
+</ParamField>
+
+<ParamField path="--auth" type="flag">
+  Require API key authentication. Use `--auth` to enable, `--no-auth` to disable. Default: disabled
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  Specific API key to use for authentication. If `--auth` is enabled but no key is provided, one will be auto-generated and displayed at startup.
+</ParamField>
+
+<ParamField path="--model" type="string">
+  Model to use for the agent. Supports Ollama models (e.g., `llama3.2:1b`, `qwen3`) and other LiteLLM-compatible models (e.g., `gemini-2.0-flash`). Short form: `-m`
+  
+  <Note>If not specified, the agent will use a default model or attempt to detect available models.</Note>
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Start basic server
+handler server agent
+```
+
+```bash Custom port
+handler server agent --port 9000
+```
+
+```bash With authentication
+handler server agent --auth
+```
+
+```bash Custom API key
+handler server agent --auth --api-key my-secret-key-123
+```
+
+```bash Specify model
+handler server agent --model llama3.2:1b
+```
+
+```bash Gemini model
+handler server agent --model gemini-2.0-flash
+```
+
+```bash Full configuration
+handler server agent \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --auth \
+  --api-key my-key \
+  --model qwen3
+```
+</CodeGroup>
+
+### Server Details
+
+The agent server provides:
+
+- **Full A2A protocol implementation**: Supports message sending, task management, streaming, and push notifications
+- **LLM-powered responses**: Uses Google ADK with LiteLLM for model flexibility
+- **Agent card endpoint**: Automatically generates and serves an agent card at the root endpoint
+- **Session management**: Maintains conversation context across messages
+- **Authentication**: Optional API key authentication
+
+### Endpoints
+
+When running, the server exposes:
+
+- `GET /` - Agent card
+- `POST /messages` - Send messages
+- `GET /tasks/{task_id}` - Get task status
+- `POST /tasks/{task_id}/cancel` - Cancel task
+- `GET /tasks/{task_id}/stream` - Resubscribe to task stream
+- `PUT /tasks/{task_id}/notification` - Set push notification config
+- `GET /tasks/{task_id}/notification` - Get push notification config
+
+<Tip>
+For development, start the agent server without authentication. For production or testing auth flows, enable `--auth` and use `handler auth set` to configure credentials.
+</Tip>
+
+### Model Configuration
+
+The agent supports multiple model backends:
+
+**Ollama Models** (local):
+```bash
+handler server agent --model llama3.2:1b
+handler server agent --model qwen3
+handler server agent --model mistral
+```
+
+**Cloud Models** (via LiteLLM):
+```bash
+handler server agent --model gemini-2.0-flash
+handler server agent --model gpt-4o
+handler server agent --model claude-3-5-sonnet-20241022
+```
+
+<Warning>
+Cloud models require appropriate API keys set in environment variables (e.g., `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`).
+</Warning>
+
+### Testing the Server
+
+Once running, you can test the server:
+
+```bash
+# Get the agent card
+handler card get http://localhost:8000
+
+# Send a message
+handler message send http://localhost:8000 "Hello!"
+
+# Stream a response
+handler message stream http://localhost:8000 "Tell me a story"
+```
+
+---
+
+## push
+
+Start a local webhook server for receiving push notifications from A2A agents. Useful for development and testing push notification flows.
+
+```bash
+handler server push [OPTIONS]
+```
+
+### Options
+
+<ParamField path="--host" type="string" default="127.0.0.1">
+  Host address to bind the server to. Default: `127.0.0.1` (localhost only)
+</ParamField>
+
+<ParamField path="--port" type="integer" default="9000">
+  Port number to bind the server to. Default: `9000`
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Start webhook server
+handler server push
+```
+
+```bash Custom port
+handler server push --port 8080
+```
+
+```bash All interfaces
+handler server push --host 0.0.0.0 --port 9000
+```
+</CodeGroup>
+
+### Server Details
+
+The webhook server:
+
+- Accepts POST requests at any path
+- Logs all incoming webhook notifications
+- Displays notification payloads in a readable format
+- Responds with 200 OK to acknowledge receipt
+
+### Using with Agents
+
+When sending messages, specify the push webhook URL:
+
+```bash
+# Start webhook server (terminal 1)
+handler server push
+
+# Send message with push notifications (terminal 2)
+handler message send http://localhost:8000 "Long running task" \
+  --push-url http://localhost:9000/webhook \
+  --push-token optional-secret
+```
+
+As the agent processes the task, it will send notifications to your webhook server, which will display them in real-time.
+
+<Note>
+The webhook server is for development only. For production, use a proper webhook endpoint with authentication and persistence.
+</Note>
+
+### Webhook Payload Format
+
+Incoming notifications follow the A2A push notification format:
+
+```json
+{
+  "task_id": "task_abc123",
+  "context_id": "ctx_xyz789",
+  "state": "working",
+  "text": "Processing your request...",
+  "timestamp": "2026-03-01T12:34:56Z"
+}
+```
+
+<Tip>
+Use the webhook server to debug push notification flows and verify that agents are sending notifications correctly.
+</Tip>

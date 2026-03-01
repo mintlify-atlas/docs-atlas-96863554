@@ -1,0 +1,325 @@
+---
+title: 'Auth Commands'
+description: 'Manage authentication credentials for A2A agents'
+---
+
+The `auth` command group provides functionality to manage authentication credentials for A2A agents. Credentials are securely stored and automatically used when interacting with agents.
+
+## set
+
+Set authentication credentials for an agent. You can configure either bearer token or API key authentication.
+
+```bash
+handler auth set <agent_url> [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent to set credentials for
+</ParamField>
+
+### Options
+
+<ParamField path="--bearer" type="string">
+  Bearer token for authentication. Short form: `-b`
+  
+  <Note>Provide either `--bearer` or `--api-key`, not both.</Note>
+</ParamField>
+
+<ParamField path="--api-key" type="string">
+  API key for authentication. Short form: `-k`
+  
+  <Note>Provide either `--bearer` or `--api-key`, not both.</Note>
+</ParamField>
+
+<ParamField path="--api-key-header" type="string" default="X-API-Key">
+  Header name for API key. Only used with `--api-key`. Default: `X-API-Key`
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Set bearer token
+handler auth set http://localhost:8000 --bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+```bash Set API key (default header)
+handler auth set http://localhost:8000 --api-key sk_1234567890abcdef
+```
+
+```bash Set API key (custom header)
+handler auth set http://localhost:8000 \
+  --api-key sk_1234567890abcdef \
+  --api-key-header Authorization
+```
+
+```bash Short form
+handler auth set http://localhost:8000 -b my-token
+```
+</CodeGroup>
+
+### Output
+
+<CodeGroup>
+```bash Bearer token set
+Set Bearer token for http://localhost:8000
+```
+
+```bash API key set
+Set API key (header: X-API-Key) for http://localhost:8000
+```
+</CodeGroup>
+
+### Validation
+
+The command validates that:
+
+- Exactly one of `--bearer` or `--api-key` is provided
+- If neither is provided, an error is shown
+- If both are provided, an error is shown
+
+<Warning>
+Credentials are stored in `~/.handler/sessions.json`. Ensure this file has appropriate permissions to protect sensitive tokens.
+</Warning>
+
+---
+
+## show
+
+Display authentication credentials for an agent. Credentials are masked for security.
+
+```bash
+handler auth show <agent_url>
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent whose credentials to display
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Show credentials
+handler auth show http://localhost:8000
+```
+</CodeGroup>
+
+### Output Format
+
+Displays credential information:
+
+- **Type**: Authentication type (`bearer` or `api_key`)
+- **Value**: Masked credential value (first 4 and last 4 characters shown)
+- **Header**: Header name (for API key authentication only)
+
+<CodeGroup>
+```bash Example output (bearer)
+Auth for http://localhost:8000
+Type: bearer
+Value: eyJh...CJ9
+```
+
+```bash Example output (API key)
+Auth for http://localhost:8000
+Type: api_key
+Value: sk_1...cdef
+Header: X-API-Key
+```
+
+```bash Example output (no credentials)
+Auth for http://localhost:8000
+No credentials configured
+```
+</CodeGroup>
+
+<Note>
+Credentials are masked to prevent accidental exposure. Only the first and last 4 characters are shown. Very short credentials (8 characters or less) are shown as `****`.
+</Note>
+
+---
+
+## clear
+
+Remove authentication credentials for an agent.
+
+```bash
+handler auth clear <agent_url>
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent whose credentials to clear
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Clear credentials
+handler auth clear http://localhost:8000
+```
+</CodeGroup>
+
+### Output
+
+<CodeGroup>
+```bash Success
+Cleared credentials for http://localhost:8000
+```
+</CodeGroup>
+
+<Warning>
+After clearing credentials, requests to the agent will be unauthenticated unless you provide credentials inline using `--bearer` or `--api-key` flags.
+</Warning>
+
+## Authentication Flow
+
+### Credential Priority
+
+When making requests to an agent, credentials are resolved in this order:
+
+1. **Inline credentials**: `--bearer` or `--api-key` flags passed to commands
+2. **Saved credentials**: Credentials stored via `auth set`
+3. **No authentication**: Request is sent without credentials
+
+<CodeGroup>
+```bash Priority example
+# Set saved credentials
+handler auth set http://localhost:8000 --bearer token-abc
+
+# Uses saved credentials
+handler message send http://localhost:8000 "Hello"
+
+# Inline credentials override saved
+handler message send http://localhost:8000 "Hello" --bearer token-xyz
+```
+</CodeGroup>
+
+### Authentication Types
+
+#### Bearer Token
+
+Bearer tokens are sent in the `Authorization` header:
+
+```
+Authorization: Bearer <token>
+```
+
+Use for:
+- JWT tokens
+- OAuth access tokens
+- Custom bearer authentication schemes
+
+#### API Key
+
+API keys are sent in a custom header (default: `X-API-Key`):
+
+```
+X-API-Key: <key>
+```
+
+You can customize the header name:
+
+```bash
+handler auth set http://localhost:8000 \
+  --api-key my-key \
+  --api-key-header X-Custom-Auth
+```
+
+Results in:
+```
+X-Custom-Auth: <key>
+```
+
+<Tip>
+Use API key authentication with custom headers when working with agents that expect non-standard authentication headers.
+</Tip>
+
+## Credential Storage
+
+Credentials are stored in `~/.handler/sessions.json` alongside session data. The file structure:
+
+```json
+{
+  "sessions": {
+    "http://localhost:8000": {
+      "agent_url": "http://localhost:8000",
+      "context_id": "ctx_abc123",
+      "task_id": "task_xyz789",
+      "credentials": {
+        "auth_type": "bearer",
+        "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+        "header_name": null
+      }
+    }
+  }
+}
+```
+
+<Warning>
+Credentials are stored in plain text. Ensure `~/.handler/sessions.json` has appropriate file permissions (e.g., `chmod 600`) to prevent unauthorized access.
+</Warning>
+
+## Working with Authenticated Agents
+
+### Setting Up Authentication
+
+<CodeGroup>
+```bash Complete workflow
+# Start an authenticated agent
+handler server agent --auth --api-key my-secret-key
+
+# Set credentials
+handler auth set http://localhost:8000 --api-key my-secret-key
+
+# Verify credentials are saved
+handler auth show http://localhost:8000
+
+# Send authenticated request
+handler message send http://localhost:8000 "Hello"
+
+# Clear when done
+handler auth clear http://localhost:8000
+```
+</CodeGroup>
+
+### Testing Authentication
+
+<CodeGroup>
+```bash Test auth requirements
+# Try without credentials (should fail if auth required)
+handler message send http://localhost:8000 "Hello"
+
+# Set credentials
+handler auth set http://localhost:8000 --bearer my-token
+
+# Try again (should succeed)
+handler message send http://localhost:8000 "Hello"
+```
+</CodeGroup>
+
+## Integration with Other Commands
+
+All commands that interact with agents support inline authentication:
+
+```bash
+# Message commands
+handler message send http://localhost:8000 "Hi" --bearer token
+handler message stream http://localhost:8000 "Hi" --api-key key
+
+# Task commands
+handler task get http://localhost:8000 task_123 --bearer token
+handler task cancel http://localhost:8000 task_123 --api-key key
+
+# Card commands (authentication typically not required)
+handler card get http://localhost:8000
+```
+
+Inline credentials override saved credentials for that specific command.
+
+<Note>
+Credentials are shared across CLI, TUI, and MCP interfaces. Setting credentials via `auth set` makes them available in all Handler interfaces.
+</Note>

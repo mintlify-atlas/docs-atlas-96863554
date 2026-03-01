@@ -1,0 +1,129 @@
+---
+title: Introduction to Handler
+description: An open-source A2A Protocol client and developer toolkit for agent-to-agent communication
+---
+
+Handler is an open-source [A2A Protocol](https://github.com/a2aproject/A2A) client and developer toolkit that provides a CLI and TUI for communicating with remote agents, an MCP server for bridging AI assistants into the A2A ecosystem, a reference server agent implementation, push notification support, and agent card validation.
+
+Whether you're building agents, integrating with existing ones, or exploring agent-to-agent communication, Handler gives you the observability and control you need from your terminal.
+
+## Who is Handler for?
+
+Handler is designed for developers, researchers, and teams working with AI agents:
+
+<CardGroup cols={2}>
+  <Card title="Agent developers" icon="code">
+    Test and debug agents that speak A2A protocol with real-time observability
+  </Card>
+  <Card title="Integration teams" icon="plug">
+    Explore and integrate with existing A2A agents quickly and efficiently
+  </Card>
+  <Card title="AI assistant users" icon="robot">
+    Bridge your AI assistant to communicate with other agents via MCP server
+  </Card>
+  <Card title="Researchers" icon="flask">
+    Experiment with agent-to-agent communication patterns and protocols
+  </Card>
+</CardGroup>
+
+## Key features
+
+### CLI and TUI interfaces
+
+Handler provides both a command-line interface for scripting and automation, and a terminal user interface for interactive agent communication.
+
+<CodeGroup>
+```bash CLI
+# Send a message via CLI
+handler message send https://agent.example.com "Hello, agent!"
+
+# Stream responses in real-time
+handler message stream https://agent.example.com "What's the weather?"
+```
+
+```bash TUI
+# Launch the interactive terminal UI
+handler tui
+
+# Or serve as a web application
+handler web --port 8001
+```
+</CodeGroup>
+
+### MCP server integration
+
+Connect your AI assistants (Claude Desktop, Cursor, etc.) to the A2A ecosystem through Handler's Model Context Protocol server.
+
+```json claude_desktop_config.json
+{
+  "mcpServers": {
+    "handler": {
+      "command": "handler",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Session management
+
+Persist conversation context and credentials across interactions with automatic session tracking.
+
+```bash
+# Continue previous conversation
+handler message send https://agent.example.com "Continue our chat" --continue
+
+# View saved sessions
+handler session list
+```
+
+### Agent card validation
+
+Validate agent cards for A2A protocol compliance before deployment.
+
+```bash
+# Validate from URL
+handler card validate https://agent.example.com
+
+# Validate from local file
+handler card validate ./agent-card.json --file
+```
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install Handler with uv, pipx, or pip
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Send your first message to an A2A agent
+  </Card>
+  <Card title="CLI reference" icon="terminal" href="/cli/message">
+    Explore all available CLI commands
+  </Card>
+  <Card title="TUI guide" icon="window" href="/guides/tui">
+    Learn the terminal user interface
+  </Card>
+</CardGroup>
+
+## Architecture
+
+Handler is built with a modular architecture:
+
+- **CLI** (src/a2a_handler/cli): rich-click based command-line interface
+- **TUI** (src/a2a_handler/tui): Textual-based terminal user interface
+- **MCP Server** (src/a2a_handler/mcp): FastMCP server exposing A2A as tools
+- **A2A Service** (src/a2a_handler/service.py): Core protocol abstraction wrapping a2a-sdk
+- **Local Server** (src/a2a_handler/server): Reference A2A agent implementation
+- **Session Store** (src/a2a_handler/session.py): Context and credential persistence
+
+<Note>
+Handler uses the official [a2a-sdk](https://github.com/a2aproject/a2a-sdk-python) for all A2A protocol operations, ensuring compliance with the latest A2A specification.
+</Note>
+
+## Support and community
+
+- **GitHub**: [alDuncanson/handler](https://github.com/alDuncanson/handler)
+- **PyPI**: [a2a-handler](https://pypi.org/project/a2a-handler/)
+- **Issues**: [GitHub Issues](https://github.com/alDuncanson/handler/issues)
+- **A2A Protocol**: [A2A Project](https://github.com/a2aproject/A2A)

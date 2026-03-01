@@ -1,0 +1,295 @@
+---
+title: Using the Interactive TUI
+description: Guide to using Handler's Textual-based terminal user interface for agent communication
+---
+
+## Overview
+
+Handler's TUI (Terminal User Interface) provides an interactive, Textual-based interface for communicating with A2A agents. The TUI offers real-time message streaming, task tracking, artifact viewing, and built-in authentication management.
+
+## Launching the TUI
+
+<Steps>
+  <Step title="Start the TUI">
+    Launch Handler's TUI using the default command:
+    
+    ```bash
+    handler
+    # or explicitly
+    handler tui
+    ```
+    
+    The TUI will start with a welcome message and display the main interface.
+  </Step>
+  
+  <Step title="Understand the layout">
+    The TUI is divided into four main panels:
+    
+    - **Contact Panel** (top-left): Agent URL input and connection
+    - **Agent Card Panel** (bottom-left): Displays agent metadata and capabilities
+    - **Messages Panel** (right-top): Shows conversation history, tasks, artifacts, and logs
+    - **Input Panel** (bottom-right): Message input and send controls
+  </Step>
+</Steps>
+
+## Connecting to an Agent
+
+<Steps>
+  <Step title="Enter agent URL">
+    In the Contact Panel, enter your agent's base URL:
+    
+    ```
+    http://localhost:8000
+    ```
+    
+    Press the **Connect** button or hit Enter.
+  </Step>
+  
+  <Step title="View agent card">
+    Once connected, the Agent Card Panel displays:
+    
+    - Agent name and description
+    - Protocol version
+    - Capabilities (streaming, push notifications)
+    - Available skills
+    - Supported content types
+    
+    The TUI fetches the agent card from `{agent_url}/.well-known/a2a/agent.json`.
+  </Step>
+</Steps>
+
+## Sending Messages
+
+<Steps>
+  <Step title="Type your message">
+    In the Input Panel at the bottom, type your message in the text field.
+  </Step>
+  
+  <Step title="Send the message">
+    Press **Enter** or click the **Send** button. The message is sent with:
+    
+    - Your message text
+    - Current `context_id` (automatically managed for conversation continuity)
+    - Any configured authentication credentials
+  </Step>
+  
+  <Step title="View the response">
+    Agent responses appear in the Messages Panel. The TUI displays:
+    
+    - User messages (your input)
+    - Agent messages (text responses)
+    - Task updates (state changes)
+    - Artifacts (structured outputs)
+    - System messages (connection status, errors)
+  </Step>
+</Steps>
+
+## Working with Tasks
+
+The TUI automatically tracks task state throughout the conversation:
+
+<CodeGroup>
+```python service.py:218-225
+# Context and task IDs are managed automatically
+if send_result.context_id:
+    self.current_context_id = send_result.context_id
+
+# Tasks are tracked in the UI
+if send_result.task:
+    messages_panel.update_task(send_result.task)
+```
+</CodeGroup>
+
+<Tabs>
+  <Tab title="Task States">
+    Tasks can be in various states:
+    
+    - `working`: Agent is processing
+    - `input-required`: Waiting for user input
+    - `auth-required`: Needs authentication
+    - `completed`: Successfully finished
+    - `failed`: Encountered an error
+    - `canceled`: User or agent canceled
+  </Tab>
+  
+  <Tab title="Viewing Tasks">
+    Switch to the **Tasks** tab in the Messages Panel to see:
+    
+    - Current task state
+    - Task history
+    - Task metadata (task_id, context_id)
+  </Tab>
+</Tabs>
+
+## Viewing Artifacts
+
+Artifacts are structured outputs from agents (code, data, files, etc.).
+
+<Steps>
+  <Step title="Switch to Artifacts tab">
+    Click the **Artifacts** tab in the Messages Panel when artifacts are available.
+  </Step>
+  
+  <Step title="Browse artifacts">
+    Each artifact shows:
+    
+    - Artifact ID
+    - Content type
+    - Parts (text, code, data)
+    
+    The TUI extracts and displays artifact content from task updates:
+    
+    ```python service.py:244-250
+    if send_result.task.artifacts:
+        for artifact in send_result.task.artifacts:
+            messages_panel.update_artifact(
+                artifact,
+                send_result.task_id or "",
+                self.current_context_id or "",
+            )
+    ```
+  </Step>
+</Steps>
+
+## Using Authentication
+
+For agents requiring authentication, the TUI provides built-in credential management.
+
+<Steps>
+  <Step title="Open authentication panel">
+    In the Messages Panel, navigate to the authentication section (implementation in `tui/components/auth.py`).
+  </Step>
+  
+  <Step title="Choose auth type">
+    Select from:
+    
+    - **None**: No authentication
+    - **API Key**: Custom header authentication
+    - **Bearer Token**: OAuth-style token
+  </Step>
+  
+  <Step title="Enter credentials">
+    **For API Key**:
+    ```
+    API Key: your-api-key-here
+    Header Name: X-API-Key (default)
+    ```
+    
+    **For Bearer Token**:
+    ```
+    Bearer Token: your-bearer-token-here
+    ```
+    
+    Credentials are applied to subsequent requests:
+    
+    ```python app.py:214-216
+    credentials = messages_panel.get_auth_credentials()
+    if credentials:
+        self._agent_service.set_credentials(credentials)
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Credentials entered in the TUI are stored in memory only and cleared when the TUI exits. For persistent credentials, use [session management](/guides/sessions).
+</Warning>
+
+## Keyboard Shortcuts
+
+The TUI provides several keyboard shortcuts for efficient navigation:
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Q` | Quit the TUI |
+| `/` | Open command palette |
+| `Ctrl+M` | Maximize focused panel |
+| `Tab` | Navigate between panels |
+| `Enter` | Send message (when in input field) |
+
+## Viewing Logs
+
+The TUI includes a built-in log viewer for debugging:
+
+<Steps>
+  <Step title="Switch to Logs tab">
+    Click the **Logs** tab in the Messages Panel.
+  </Step>
+  
+  <Step title="Monitor activity">
+    View real-time logs including:
+    
+    - Connection events
+    - Message send/receive
+    - HTTP requests
+    - Error messages
+    
+    The log handler is configured in `app.py:100-104`:
+    
+    ```python
+    tui_log_handler = install_tui_log_handler(level=logging.DEBUG)
+    tui_log_handler.set_callback(self._on_log_line)
+    
+    messages_panel = self.query_one("#messages-container", TabbedMessagesPanel)
+    messages_panel.load_logs(tui_log_handler.get_lines())
+    ```
+  </Step>
+</Steps>
+
+## Web Mode
+
+You can also run the TUI as a web application:
+
+```bash
+handler tui --web
+```
+
+This serves the TUI in your browser, making it accessible remotely or for sharing.
+
+## Theming
+
+Handler supports custom themes. Your theme preference is saved to `~/.handler/` and persists across sessions:
+
+```python app.py:121-126
+def watch_theme(self, new_theme: str) -> None:
+    """Called when the app theme changes."""
+    logger.debug("Theme changed to: %s", new_theme)
+    save_theme(new_theme)
+    agent_card_panel = self.query_one("#agent-card-container", AgentCardPanel)
+    agent_card_panel.refresh_theme()
+```
+
+## Tips and Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Context Continuity" icon="link">
+    The TUI automatically manages `context_id` for conversation continuity. Each new connection generates a fresh context.
+  </Card>
+  
+  <Card title="Streaming Support" icon="bolt">
+    If the agent supports streaming, responses appear incrementally as they're generated.
+  </Card>
+  
+  <Card title="Panel Maximization" icon="expand">
+    Use `Ctrl+M` to maximize the Messages or Agent Card panel for better visibility.
+  </Card>
+  
+  <Card title="Error Handling" icon="circle-exclamation">
+    Connection errors and agent errors are displayed as system messages in the Messages Panel.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/guides/authentication">
+    Learn about bearer tokens and API key authentication
+  </Card>
+  
+  <Card title="Sessions" icon="clock-rotate-left" href="/guides/sessions">
+    Persist context and credentials across TUI sessions
+  </Card>
+  
+  <Card title="CLI Reference" icon="terminal" href="/guides/tui">
+    Complete CLI reference for TUI options
+  </Card>
+</CardGroup>

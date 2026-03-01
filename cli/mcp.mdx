@@ -1,0 +1,247 @@
+---
+title: 'MCP Server Command'
+description: 'Run an MCP server exposing A2A capabilities as tools'
+---
+
+The `mcp` command starts a Model Context Protocol (MCP) server that exposes Handler's A2A functionality as MCP tools and resources. This allows MCP-compatible clients like Claude Desktop, Cursor, and other AI assistants to interact with A2A agents.
+
+```bash
+handler mcp [OPTIONS]
+```
+
+## Options
+
+<ParamField path="--transport" type="string" default="stdio">
+  Transport protocol to use. Options: `stdio`, `sse`, `streamable-http`. Default: `stdio`
+  
+  Short form: `-t`
+</ParamField>
+
+### Transport Types
+
+- **stdio**: Standard input/output (recommended for most MCP clients)
+- **sse**: Server-Sent Events
+- **streamable-http**: HTTP streaming
+
+## Examples
+
+<CodeGroup>
+```bash Start MCP server (stdio)
+handler mcp
+```
+
+```bash Use SSE transport
+handler mcp --transport sse
+```
+
+```bash Use HTTP streaming
+handler mcp --transport streamable-http
+```
+</CodeGroup>
+
+## Available Tools
+
+The MCP server exposes the following categories of tools:
+
+### Card Tools
+
+<ParamField path="validate_agent_card" type="tool">
+  Validate an agent card from URL or file
+  
+  **Parameters**:
+  - `source` (string): URL or file path to validate
+</ParamField>
+
+<ParamField path="get_agent_card" type="tool">
+  Retrieve an agent's full card details
+  
+  **Parameters**:
+  - `agent_url` (string): Agent URL
+  - `authenticated` (boolean, optional): Request authenticated card
+</ParamField>
+
+### Message Tools
+
+<ParamField path="send_message" type="tool">
+  Send messages to agents with session and auth support
+  
+  **Parameters**:
+  - `agent_url` (string): Agent URL
+  - `text` (string): Message text
+  - `stream` (boolean, optional): Enable streaming
+  - `context_id` (string, optional): Context ID
+  - `task_id` (string, optional): Task ID
+  - `use_session` (boolean, optional): Continue from saved session
+  - `push_url` (string, optional): Webhook URL
+  - `push_token` (string, optional): Webhook token
+  - `bearer_token` (string, optional): Bearer auth
+  - `api_key` (string, optional): API key auth
+</ParamField>
+
+### Task Tools
+
+<ParamField path="get_task" type="tool">
+  Get task status and details
+  
+  **Parameters**:
+  - `agent_url` (string): Agent URL
+  - `task_id` (string): Task ID
+  - `history_length` (integer, optional): Number of history messages
+  - `bearer_token` (string, optional): Bearer auth
+  - `api_key` (string, optional): API key auth
+</ParamField>
+
+<ParamField path="cancel_task" type="tool">
+  Cancel a running task
+  
+  **Parameters**:
+  - `agent_url` (string): Agent URL
+  - `task_id` (string): Task ID
+  - `bearer_token` (string, optional): Bearer auth
+  - `api_key` (string, optional): API key auth
+</ParamField>
+
+<ParamField path="set_task_notification" type="tool">
+  Configure push notification webhooks
+  
+  **Parameters**:
+  - `agent_url` (string): Agent URL
+  - `task_id` (string): Task ID
+  - `url` (string): Webhook URL
+  - `token` (string, optional): Webhook token
+  - `bearer_token` (string, optional): Bearer auth
+  - `api_key` (string, optional): API key auth
+</ParamField>
+
+<ParamField path="get_task_notification" type="tool">
+  Get push notification config
+  
+  **Parameters**:
+  - `agent_url` (string): Agent URL
+  - `task_id` (string): Task ID
+  - `config_id` (string, optional): Config ID
+  - `bearer_token` (string, optional): Bearer auth
+  - `api_key` (string, optional): API key auth
+</ParamField>
+
+### Session Tools
+
+<ParamField path="list_sessions" type="tool">
+  List all saved sessions
+  
+  **Parameters**: None
+</ParamField>
+
+<ParamField path="get_session_info" type="tool">
+  Get session for a specific agent
+  
+  **Parameters**:
+  - `agent_url` (string): Agent URL
+</ParamField>
+
+<ParamField path="clear_session_data" type="tool">
+  Clear saved session state
+  
+  **Parameters**:
+  - `agent_url` (string, optional): Agent URL (omit to clear all)
+</ParamField>
+
+### Auth Tools
+
+<ParamField path="set_agent_credentials" type="tool">
+  Save bearer token or API key for an agent
+  
+  **Parameters**:
+  - `agent_url` (string): Agent URL
+  - `bearer_token` (string, optional): Bearer token
+  - `api_key` (string, optional): API key
+  - `api_key_header` (string, optional): Header name for API key (default: X-API-Key)
+</ParamField>
+
+<ParamField path="clear_agent_credentials" type="tool">
+  Remove saved credentials
+  
+  **Parameters**:
+  - `agent_url` (string): Agent URL
+</ParamField>
+
+## MCP Client Configuration
+
+### Claude Desktop
+
+Add Handler to your Claude Desktop configuration (`claude_desktop_config.json`):
+
+```json claude_desktop_config.json
+{
+  "mcpServers": {
+    "handler": {
+      "command": "handler",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Configuration File Locations
+
+<CodeGroup>
+```bash macOS
+~/Library/Application Support/Claude/claude_desktop_config.json
+```
+
+```bash Windows
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+```bash Linux
+~/.config/Claude/claude_desktop_config.json
+```
+</CodeGroup>
+
+### Custom Transport
+
+To use a different transport:
+
+```json claude_desktop_config.json
+{
+  "mcpServers": {
+    "handler": {
+      "command": "handler",
+      "args": ["mcp", "--transport", "sse"]
+    }
+  }
+}
+```
+
+## Usage in MCP Clients
+
+Once configured, you can interact with A2A agents through your MCP client:
+
+**Example prompts in Claude Desktop**:
+
+- "Use the send_message tool to ask the agent at http://localhost:8000 what the weather is like"
+- "Get the agent card from http://localhost:8000"
+- "List all my saved sessions"
+- "Cancel task task_abc123 at http://localhost:8000"
+- "Set credentials for http://localhost:8000 with bearer token xyz"
+
+<Tip>
+The MCP server allows AI assistants to autonomously interact with A2A agents, making it easy to integrate A2A workflows into your AI-assisted development.
+</Tip>
+
+<Note>
+The MCP server uses Handler's session and credential management, so sessions and credentials set through MCP tools are shared with CLI commands and vice versa.
+</Note>
+
+## Debugging
+
+To debug MCP server issues:
+
+1. Check Claude Desktop logs (Help → Developer Tools)
+2. Verify Handler is installed and accessible in your PATH
+3. Test the command manually: `handler mcp` should start without errors
+4. Check permissions on the configuration file
+
+<Warning>
+The MCP server runs as a separate process. Credentials and sessions are persisted to `~/.handler/` and shared across all Handler interfaces (CLI, TUI, MCP).
+</Warning>

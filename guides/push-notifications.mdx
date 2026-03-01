@@ -1,0 +1,629 @@
+---
+title: Push Notifications
+description: Set up webhooks to receive task updates from A2A agents
+---
+
+## Overview
+
+Push notifications enable agents to send real-time task updates to your webhook endpoint instead of requiring polling. Handler provides:
+
+- A webhook server to receive notifications
+- CLI commands to configure push notification settings on agents
+- Automatic notification storage and display
+
+## How Push Notifications Work
+
+When you configure a push notification webhook for a task:
+
+1. **Register webhook**: You provide a webhook URL and optional token to the agent
+2. **Agent stores config**: The agent saves your webhook configuration
+3. **Task updates**: When the task state changes, the agent POSTs updates to your webhook
+4. **Handler receives**: Your webhook server receives and displays notifications
+
+<CodeGroup>
+```python service.py:542-569
+async def set_push_config(
+    self,
+    task_id: str,
+    webhook_url: str,
+    authentication_token: str | None = None,
+) -> TaskPushNotificationConfig:
+    """Set push notification configuration for a task.
+    
+    Args:
+        task_id: ID of the task
+        webhook_url: Webhook URL to receive notifications
+        authentication_token: Optional authentication token
+    
+    Returns:
+        The created push notification configuration
+    """
+    client = await self._get_or_create_client()
+    
+    push_config = TaskPushNotificationConfig(
+        task_id=task_id,
+        push_notification_config=PushNotificationConfig(
+            url=webhook_url,
+            token=authentication_token,
+        ),
+    )
+    logger.info("Setting push config for task %s: %s", task_id, webhook_url)
+    
+    return await client.set_task_callback(push_config)
+```
+</CodeGroup>
+
+## Starting the Webhook Server
+
+<Tabs>
+  <Tab title="Basic Usage">
+    Start the webhook server on default port 9000:
+    
+    ```bash
+    handler webhook
+    ```
+    
+    Output:
+    ```
+    Starting webhook server on 127.0.0.1:9000
+    
+    Endpoints:
+      POST http://127.0.0.1:9000/webhook - Receive notifications
+      GET  http://127.0.0.1:9000/webhook - Validation check
+      GET  http://127.0.0.1:9000/notifications - List received
+      POST http://127.0.0.1:9000/notifications/clear - Clear stored
+    
+    Use this URL for push notifications: http://127.0.0.1:9000/webhook
+    ```
+  </Tab>
+  
+  <Tab title="Custom Host/Port">
+    Bind to a specific host and port:
+    
+    ```bash
+    handler webhook --host 0.0.0.0 --port 8080
+    ```
+    
+    This makes the webhook accessible from other machines:
+    ```
+    http://your-ip:8080/webhook
+    ```
+  </Tab>
+  
+  <Tab title="Behind Reverse Proxy">
+    For production deployments with public webhooks:
+    
+    ```bash
+    # Start webhook server locally
+    handler webhook --host 127.0.0.1 --port 9000
+    
+    # Configure nginx/caddy to proxy to it
+    # Public URL: https://yourhost.com/webhook
+    ```
+  </Tab>
+</Tabs>
+
+The webhook server is implemented in `webhook.py:144-178`:
+
+```python
+def run_webhook_server(
+    host: str = "127.0.0.1",
+    port: int = 9000,
+) -> None:
+    """Start the webhook server.
+    
+    Args:
+        host: Host address to bind to
+        port: Port number to bind to
+    """
+    logger.info("Starting webhook server on %s:%d", host, port)
+    webhook_application = create_webhook_application()
+    uvicorn.run(webhook_application, host=host, port=port, log_level="warning")
+```
+
+## Configuring Push Notifications
+
+<Steps>
+  <Step title="Start webhook server">
+    ```bash
+    handler webhook
+    ```
+    
+    Note the webhook URL: `http://127.0.0.1:9000/webhook`
+  </Step>
+  
+  <Step title="Send a message and get task ID">
+    ```bash
+    handler message send \
+      --url http://localhost:8000 \
+      "Process this data"
+    ```
+    
+    Output:
+    ```
+    Task ID: task-abc123-def456
+    State: working
+    ...
+    ```
+  </Step>
+  
+  <Step title="Configure push notification">
+    ```bash
+    handler task set-notification \
+      --url http://localhost:8000 \
+      --task-id task-abc123-def456 \
+      --webhook-url http://127.0.0.1:9000/webhook
+    ```
+    
+    With authentication token:
+    ```bash
+    handler task set-notification \
+      --url http://localhost:8000 \
+      --task-id task-abc123-def456 \
+      --webhook-url http://127.0.0.1:9000/webhook \
+      --webhook-token "secret-token-123"
+    ```
+  </Step>
+  
+  <Step title="Receive notifications">
+    When the task updates, your webhook receives a POST:
+    
+    ```json
+    {
+      "id": "task-abc123-def456",
+      "status": {
+        "state": "completed",
+        "message": "Task finished successfully"
+      },
+      "context_id": "ctx-xyz789"
+    }
+    ```
+    
+    The webhook server displays it:
+    ```
+    Push Notification Received
+    Timestamp: 2026-03-01T18:30:45.123456
+    Task ID: task-abc123-def456
+    State: completed
+    
+    {
+      "id": "task-abc123-def456",
+      "status": {
+        "state": "completed",
+        "message": "Task finished successfully"
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Notification Format
+
+Notifications are stored with full context:
+
+<CodeGroup>
+```python webhook.py:25-33
+@dataclass
+class PushNotification:
+    """A received push notification."""
+    
+    timestamp: datetime
+    task_id: str | None
+    payload: dict[str, Any]
+    headers: dict[str, str]
+```
+</CodeGroup>
+
+The webhook handler processes incoming notifications:
+
+```python webhook.py:66-110
+async def handle_push_notification(request: Request) -> JSONResponse:
+    """Handle incoming push notifications from A2A agents."""
+    try:
+        request_payload = await request.json()
+        if not isinstance(request_payload, dict):
+            return JSONResponse(
+                {"error": "Payload must be a JSON object"}, status_code=400
+            )
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    
+    request_headers = dict(request.headers)
+    task_id = request_payload.get("id") or request_payload.get("task_id")
+    
+    notification = PushNotification(
+        timestamp=datetime.now(),
+        task_id=task_id,
+        payload=request_payload,
+        headers=request_headers,
+    )
+    notification_store.add_notification(notification)
+    
+    logger.info("Received push notification for task: %s", task_id)
+    
+    # Display notification...
+    
+    return JSONResponse({"status": "ok", "received": True})
+```
+
+## Webhook Authentication
+
+Protect your webhook with tokens:
+
+<Tabs>
+  <Tab title="Setting Token">
+    Configure the webhook with a token:
+    
+    ```bash
+    handler task set-notification \
+      --url http://localhost:8000 \
+      --task-id task-123 \
+      --webhook-url https://yourhost.com/webhook \
+      --webhook-token "your-secret-token"
+    ```
+    
+    The agent includes the token in requests:
+    ```http
+    POST /webhook HTTP/1.1
+    Host: yourhost.com
+    X-A2A-Notification-Token: your-secret-token
+    Content-Type: application/json
+    ```
+  </Tab>
+  
+  <Tab title="Validating Token">
+    Handler's webhook server extracts and displays the token:
+    
+    ```python webhook.py:102-104
+    authentication_token = request_headers.get("x-a2a-notification-token")
+    if authentication_token:
+        print(f"Token: {authentication_token[:20]}...")
+    ```
+    
+    For custom validation, extend the handler:
+    
+    ```python
+    EXPECTED_TOKEN = "your-secret-token"
+    
+    async def handle_push_notification(request: Request) -> JSONResponse:
+        token = request.headers.get("x-a2a-notification-token")
+        if token != EXPECTED_TOKEN:
+            return JSONResponse(
+                {"error": "Unauthorized"}, 
+                status_code=401
+            )
+        # Process notification...
+    ```
+  </Tab>
+</Tabs>
+
+## Managing Notifications
+
+<Tabs>
+  <Tab title="List Received">
+    View all received notifications:
+    
+    ```bash
+    curl http://127.0.0.1:9000/notifications
+    ```
+    
+    Response:
+    ```json
+    {
+      "count": 3,
+      "notifications": [
+        {
+          "timestamp": "2026-03-01T18:30:45.123456",
+          "task_id": "task-123",
+          "payload": {
+            "id": "task-123",
+            "status": {"state": "completed"}
+          }
+        },
+        ...
+      ]
+    }
+    ```
+    
+    Implementation in `webhook.py:119-135`:
+    ```python
+    async def handle_list_notifications(request: Request) -> JSONResponse:
+        """List all received notifications."""
+        all_notifications = notification_store.get_all_notifications()
+        return JSONResponse(
+            {
+                "count": len(all_notifications),
+                "notifications": [
+                    {
+                        "timestamp": notification.timestamp.isoformat(),
+                        "task_id": notification.task_id,
+                        "payload": notification.payload,
+                    }
+                    for notification in all_notifications
+                ],
+            }
+        )
+    ```
+  </Tab>
+  
+  <Tab title="Clear Stored">
+    Clear all stored notifications:
+    
+    ```bash
+    curl -X POST http://127.0.0.1:9000/notifications/clear
+    ```
+    
+    Response:
+    ```json
+    {
+      "status": "ok",
+      "message": "Notifications cleared"
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Storage Limits">
+    Notifications are stored in memory with a maximum of 100:
+    
+    ```python webhook.py:22-23
+    DEFAULT_MAX_STORED_NOTIFICATIONS = 100
+    
+    @dataclass
+    class PushNotificationStore:
+        notifications: deque[PushNotification] = field(
+            default_factory=lambda: deque(maxlen=DEFAULT_MAX_STORED_NOTIFICATIONS)
+        )
+    ```
+    
+    Older notifications are automatically evicted when the limit is reached.
+  </Tab>
+</Tabs>
+
+## Getting Push Configuration
+
+Retrieve the current webhook configuration for a task:
+
+```bash
+handler task get-notification \
+  --url http://localhost:8000 \
+  --task-id task-123
+```
+
+Output:
+```
+Push Notification Config
+Task ID: task-123
+Webhook URL: http://127.0.0.1:9000/webhook
+Token: your-secret-token (first 20 chars)
+```
+
+Implementation:
+
+```python service.py:571-593
+async def get_push_config(
+    self,
+    task_id: str,
+    config_id: str | None = None,
+) -> TaskPushNotificationConfig:
+    """Get push notification configuration for a task.
+    
+    Args:
+        task_id: ID of the task
+        config_id: Optional specific config ID to retrieve
+    
+    Returns:
+        The push notification configuration
+    """
+    client = await self._get_or_create_client()
+    
+    params = GetTaskPushNotificationConfigParams(
+        id=task_id,
+        push_notification_config_id=config_id,
+    )
+    logger.info("Getting push config for task %s", task_id)
+    
+    return await client.get_task_callback(params)
+```
+
+## Using with MCP Server
+
+Configure push notifications through the MCP server:
+
+<CodeGroup>
+```python mcp/server.py:296-342
+@mcp.tool()
+async def set_task_notification(
+    agent_url: str,
+    task_id: str,
+    webhook_url: str,
+    webhook_token: str | None = None,
+    bearer_token: str | None = None,
+    api_key: str | None = None,
+) -> dict:
+    """Configure push notifications for a task.
+    
+    Sets up a webhook URL to receive push notifications when the task
+    status changes. This allows for async notification instead of polling.
+    
+    Args:
+        agent_url: Base URL of the A2A agent
+        task_id: ID of the task to configure notifications for
+        webhook_url: URL that will receive notification POSTs
+        webhook_token: Optional authentication token for the webhook
+        bearer_token: Optional bearer token for agent authentication
+        api_key: Optional API key for agent authentication
+    
+    Returns:
+        task_id: The task ID
+        url: The configured webhook URL
+        token: The webhook token (truncated for security)
+        config_id: The notification config ID (if provided by agent)
+    """
+    credentials = _resolve_credentials(agent_url, bearer_token, api_key)
+    
+    async with _build_http_client() as http_client:
+        service = A2AService(http_client, agent_url, credentials=credentials)
+        config = await service.set_push_config(task_id, webhook_url, webhook_token)
+        
+        result: dict = {"task_id": config.task_id}
+        if config.push_notification_config:
+            pnc = config.push_notification_config
+            result["url"] = pnc.url
+            if pnc.token:
+                result["token"] = f"{pnc.token[:20]}..."
+            if pnc.id:
+                result["config_id"] = pnc.id
+        
+        return result
+```
+</CodeGroup>
+
+## Public Webhook Deployment
+
+For production use with public URLs:
+
+<Steps>
+  <Step title="Deploy webhook server">
+    Run on a publicly accessible host:
+    
+    ```bash
+    handler webhook --host 0.0.0.0 --port 9000
+    ```
+  </Step>
+  
+  <Step title="Configure reverse proxy">
+    Nginx example:
+    
+    ```nginx
+    server {
+        listen 443 ssl;
+        server_name webhooks.yourhost.com;
+        
+        location /webhook {
+            proxy_pass http://127.0.0.1:9000/webhook;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+    ```
+  </Step>
+  
+  <Step title="Use public URL">
+    ```bash
+    handler task set-notification \
+      --url http://agent.example.com \
+      --task-id task-123 \
+      --webhook-url https://webhooks.yourhost.com/webhook \
+      --webhook-token "$(openssl rand -hex 32)"
+    ```
+  </Step>
+</Steps>
+
+## Checking Agent Support
+
+Verify push notification support in the agent card:
+
+```bash
+handler card get http://localhost:8000
+```
+
+Look for:
+```json
+{
+  "capabilities": {
+    "pushNotifications": true
+  }
+}
+```
+
+Or check programmatically:
+
+```python service.py:314-319
+@property
+def supports_push_notifications(self) -> bool:
+    """Check if the agent supports push notifications."""
+    if self._cached_agent_card and self._cached_agent_card.capabilities:
+        return bool(self._cached_agent_card.capabilities.push_notifications)
+    return False
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Webhook not receiving notifications">
+    Check connectivity:
+    
+    ```bash
+    # Test webhook is accessible
+    curl http://127.0.0.1:9000/webhook
+    ```
+    
+    Verify configuration:
+    ```bash
+    handler task get-notification \
+      --url http://localhost:8000 \
+      --task-id task-123
+    ```
+    
+    Check agent logs for webhook delivery attempts.
+  </Accordion>
+  
+  <Accordion title="Connection refused errors">
+    Ensure webhook server is running:
+    
+    ```bash
+    ps aux | grep "handler webhook"
+    ```
+    
+    Check firewall rules:
+    ```bash
+    sudo ufw status
+    ```
+  </Accordion>
+  
+  <Accordion title="Agent returns 'not supported'">
+    The agent doesn't support push notifications:
+    
+    ```bash
+    handler card get http://localhost:8000 | grep pushNotifications
+    ```
+    
+    If `false`, use polling with `handler task get` instead.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Authentication" icon="lock">
+    Always set a webhook token for production webhooks.
+  </Card>
+  
+  <Card title="HTTPS in Production" icon="shield">
+    Use HTTPS URLs for webhooks to protect notification data.
+  </Card>
+  
+  <Card title="Monitor Storage" icon="database">
+    Clear notifications periodically to prevent memory buildup.
+  </Card>
+  
+  <Card title="Handle Retries" icon="rotate">
+    Agents may retry failed webhook deliveries - ensure idempotency.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Cards" icon="address-card" href="/guides/agent-cards">
+    Check agent capabilities including push notification support
+  </Card>
+  
+  <Card title="CLI Reference" icon="terminal" href="/api-reference/cli/webhook">
+    Complete webhook command reference
+  </Card>
+  
+  <Card title="Task Management" icon="list-check" href="/cli/task">
+    Working with tasks and task operations
+  </Card>
+</CardGroup>

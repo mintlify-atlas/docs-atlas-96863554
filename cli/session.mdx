@@ -1,0 +1,241 @@
+---
+title: 'Session Commands'
+description: 'Manage saved session state for A2A agents'
+---
+
+The `session` command group provides functionality to manage saved session state, including context IDs and task IDs from previous interactions with A2A agents. Sessions are automatically saved after each message and allow you to continue conversations seamlessly.
+
+## list
+
+List all saved sessions across all agents.
+
+```bash
+handler session list
+```
+
+### Examples
+
+<CodeGroup>
+```bash List all sessions
+handler session list
+```
+</CodeGroup>
+
+### Output Format
+
+Displays all saved sessions with:
+
+- **Agent URL**: The agent endpoint
+- **Context ID**: Saved conversation context (if available)
+- **Task ID**: Saved task identifier (if available)
+
+<CodeGroup>
+```bash Example output
+Saved Sessions (2)
+
+http://localhost:8000
+Context ID: ctx_abc123
+Task ID: task_xyz789
+
+https://api.example.com/agent
+Context ID: ctx_def456
+Task ID: task_uvw012
+```
+</CodeGroup>
+
+If no sessions are saved:
+
+```bash
+No saved sessions
+```
+
+<Tip>
+Sessions are automatically created when you send messages to agents. Use sessions to continue conversations without manually tracking context and task IDs.
+</Tip>
+
+---
+
+## show
+
+Display session state for a specific agent.
+
+```bash
+handler session show <agent_url>
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string" required>
+  URL of the A2A agent whose session to display
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Show session for agent
+handler session show http://localhost:8000
+```
+
+```bash Show session for remote agent
+handler session show https://api.example.com/agent
+```
+</CodeGroup>
+
+### Output Format
+
+Displays the session details:
+
+- **Context ID**: Current conversation context (or "none" if not set)
+- **Task ID**: Current task identifier (or "none" if not set)
+
+<CodeGroup>
+```bash Example output (with session)
+Session for http://localhost:8000
+Context ID: ctx_abc123
+Task ID: task_xyz789
+```
+
+```bash Example output (no session)
+Session for http://localhost:8000
+Context ID: none
+Task ID: none
+```
+</CodeGroup>
+
+<Note>
+Even if no session exists, the command will display "none" for both fields rather than failing. Sessions are created automatically when you first interact with an agent.
+</Note>
+
+---
+
+## clear
+
+Clear saved session state for a specific agent or all agents.
+
+```bash
+handler session clear [agent_url] [OPTIONS]
+```
+
+### Arguments
+
+<ParamField path="agent_url" type="string">
+  URL of the A2A agent whose session to clear. Optional if using `--all`.
+</ParamField>
+
+### Options
+
+<ParamField path="--all" type="flag">
+  Clear all sessions for all agents. Short form: `-a`
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```bash Clear session for specific agent
+handler session clear http://localhost:8000
+```
+
+```bash Clear all sessions
+handler session clear --all
+```
+</CodeGroup>
+
+### Output
+
+<CodeGroup>
+```bash Cleared specific session
+Cleared session for http://localhost:8000
+```
+
+```bash Cleared all sessions
+Cleared all sessions
+```
+</CodeGroup>
+
+If neither an agent URL nor `--all` is provided:
+
+```bash
+Provide AGENT_URL or use --all to clear sessions
+```
+
+<Warning>
+Clearing a session removes the saved context ID and task ID. You will not be able to use `--continue` to resume conversations with that agent until you send a new message.
+</Warning>
+
+## Session Storage
+
+Sessions are stored in `~/.handler/sessions.json` and include:
+
+- **agent_url**: The agent endpoint
+- **context_id**: Conversation context identifier
+- **task_id**: Task identifier
+
+Sessions are automatically:
+
+- **Created**: When you send your first message to an agent
+- **Updated**: After each message exchange
+- **Used**: When you pass `--continue` to message commands
+
+### Example Workflow
+
+<CodeGroup>
+```bash Session workflow
+# Send first message (creates session)
+handler message send http://localhost:8000 "Hello"
+# Context ID: ctx_abc123
+# Task ID: task_xyz789
+
+# Session is saved automatically
+
+# Continue conversation using session
+handler message send http://localhost:8000 "What did I just say?" --continue
+# Uses saved ctx_abc123 and task_xyz789
+
+# Check session state
+handler session show http://localhost:8000
+# Context ID: ctx_abc123
+# Task ID: task_xyz789
+
+# Clear when done
+handler session clear http://localhost:8000
+```
+</CodeGroup>
+
+## Session Scope
+
+Sessions are scoped by agent URL:
+
+- Each agent URL has its own independent session
+- Sessions for `http://localhost:8000` and `http://localhost:8001` are separate
+- Sessions persist across CLI invocations (stored on disk)
+
+<Tip>
+Use sessions to maintain long-running conversations without manually tracking IDs. The `--continue` flag automatically uses the saved context and task IDs.
+</Tip>
+
+## Integration with Other Commands
+
+Sessions work seamlessly with message commands:
+
+```bash
+# Send message and save session
+handler message send http://localhost:8000 "Plan a trip"
+
+# Continue conversation
+handler message send http://localhost:8000 "Make it 7 days" --continue
+
+# Stream continuation
+handler message stream http://localhost:8000 "Add hotels" --continue
+
+# Check what's saved
+handler session show http://localhost:8000
+```
+
+Sessions are also shared with:
+
+- **TUI**: The textual interface uses the same session storage
+- **MCP Server**: MCP tools can access and modify sessions
+
+<Note>
+Credentials are managed separately using the `auth` commands. Sessions only store context and task IDs, not authentication credentials.
+</Note>
