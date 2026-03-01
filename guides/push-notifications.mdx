@@ -60,7 +60,7 @@ async def set_push_config(
     Start the webhook server on default port 9000:
     
     ```bash
-    handler webhook
+    handler server push
     ```
     
     Output:
@@ -81,7 +81,7 @@ async def set_push_config(
     Bind to a specific host and port:
     
     ```bash
-    handler webhook --host 0.0.0.0 --port 8080
+    handler server push --host 0.0.0.0 --port 8080
     ```
     
     This makes the webhook accessible from other machines:
@@ -95,7 +95,7 @@ async def set_push_config(
     
     ```bash
     # Start webhook server locally
-    handler webhook --host 127.0.0.1 --port 9000
+    handler server push --host 127.0.0.1 --port 9000
     
     # Configure nginx/caddy to proxy to it
     # Public URL: https://yourhost.com/webhook
@@ -126,7 +126,7 @@ def run_webhook_server(
 <Steps>
   <Step title="Start webhook server">
     ```bash
-    handler webhook
+    handler server push
     ```
     
     Note the webhook URL: `http://127.0.0.1:9000/webhook`
@@ -487,7 +487,7 @@ For production use with public URLs:
     Run on a publicly accessible host:
     
     ```bash
-    handler webhook --host 0.0.0.0 --port 9000
+    handler server push --host 0.0.0.0 --port 9000
     ```
   </Step>
   
@@ -572,7 +572,7 @@ def supports_push_notifications(self) -> bool:
     Ensure webhook server is running:
     
     ```bash
-    ps aux | grep "handler webhook"
+    ps aux | grep "handler server push"
     ```
     
     Check firewall rules:
